@@ -85,12 +85,10 @@ def dlt(real_points, screen_points):
     M = np.array(M)
 
     # Svd time
-    _, E, V = np.linalg.svd(M, full_matrices=False)
-
-    print(E[-1])
+    _, _, V = np.linalg.svd(M, full_matrices=False)
 
     # Last column of V, the vector that "points in the direction of the null space"
-    p = V[:, -1]
+    p = V.T[:, -1]
 
     P = p.reshape((3,4))
 
@@ -139,13 +137,40 @@ def to_homo_coords(x):
     x = np.append(x,[row],axis=0)
     return x
 
-def to_normal_coords(x, entire=True):
+def to_euclid_coords(x, entire=True):
     last_row = x[-1]
     X = x/last_row
     if entire:
         return X
     else:
         return cut_last_row(X)
+
+def construct_normalization_matrix(dim, avg, scale):
+    trans_mat = np.zeros((dim, dim))
+
+    trans_mat[0:dim-1, 0:dim-1] = np.identity(dim-1)
+    trans_mat[0:dim-1, dim-1] = - avg
+    trans_mat *= scale
+    trans_mat[dim-1, dim-1] = 1
+    return trans_mat
+
+def normalize_points(pts):
+    # list of points in an np array not a matrix 
+    # column shape is the length of the dimenstions
+
+    dims = pts.shape[1]
+    avg = np.average(pts, axis=0)
+    translated_pts = pts - avg
+
+    distances = np.linalg.norm(translated_pts, ord=dims, axis=1)
+    scale_factor = np.sqrt(dims)/np.average(distances)
+
+    new_points = translated_pts * scale_factor
+
+    return new_points, avg, scale_factor
+
+def unnormalize_points(pts, avg, scale):
+    return pts/scale + avg
 
 def dyadic_dot_product(A, B):
     return A.flatten('F').T @ B.flatten('F')

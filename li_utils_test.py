@@ -57,11 +57,63 @@ def direct_linear_transform(real_points, screen_points):
     # If we perform the dlt again using the estimated screen points the error
     # should be close to zero and the new estimated projection should be roughly equal
 
-    P_before = li_utils.dlt(real_points, screen_points)
+    A = np.random.rand(3,4)
+    x = np.random.rand(3,12)
+    x = li_utils.to_homo_coords(x)
+    A = A / np.linalg.norm(A)
+
+    X_inp = li_utils.to_euclid_coords(x,   entire=False).T
+    X_out = li_utils.to_euclid_coords(A@x, entire=False).T
+
+    A_new = li_utils.dlt(X_inp, X_out)
+
+    if np.isclose(li_utils.dyadic_dot_product(A, A_new), -1):
+        A_new = -A_new
+
+    assert np.isclose(A, A_new).all(), "DLT not working"
+
+    norm_real, avg_real, scale_real = li_utils.normalize_points(real_points)
+    norm_screen, avg_screen, scale_screen = li_utils.normalize_points(screen_points)
+
+    P_before = li_utils.dlt(norm_real, norm_screen)
+
     estimated_screen_points = li_utils.camera_project_points(P_before, real_points)
     P_after = li_utils.dlt(real_points, estimated_screen_points)
 
-    return li_utils.matrix_approx_equal(P_before, P_after, debug=True)
+    return li_utils.matrix_approx_equal(P_before, P_after), "DLT not working"
+
+def normalization_helper(pts):
+    dims = pts.shape[1]
+    new_points, avg, scale = li_utils.normalize_points(pts)
+
+    avg_pt = np.average(new_points, axis=0)
+    assert np.isclose(avg_pt, 0).all(), "Average point is not zero."
+
+    distances = np.linalg.norm(new_points, ord=dims, axis=1)
+    avg_dist = np.average(distances) 
+    assert np.isclose(avg_dist, np.sqrt(dims)), f"Average of distances is {np.round(avg_dist,5)} instead of sqrt({dims})."
+
+    old_points = li_utils.unnormalize_points(new_points, avg, scale)
+    assert np.isclose(old_points, pts).all(), "Reverse normalization failed."
+
+    norm_mat = li_utils.construct_normalization_matrix(dims+1, avg, scale)
+    norm_mat_inv = np.linalg.inv(norm_mat)
+
+    X = li_utils.to_homo_coords(pts.T)
+    trans_X = norm_mat@X
+    trans_points = li_utils.cut_last_row(trans_X).T
+
+    assert np.isclose(trans_points, new_points).all(), "normalization matrix incorrect"
+
+    back_X = norm_mat_inv@trans_X
+    back_points = li_utils.cut_last_row(back_X).T
+
+    assert np.isclose(back_points, pts).all(), "inverse normalization matrix incorrect"
+
+@test_calibration
+def normalization(real_points, screen_points):
+    normalization_helper(real_points)
+    normalization_helper(screen_points)
 
 if __name__ == '__main__':
     for test in tests:
