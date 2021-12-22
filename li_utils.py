@@ -21,12 +21,15 @@ def normalize_points(pts):
     # list of points in an np array not a matrix 
     # column shape is the length of the dimenstions
 
+    # we want the mean point to be the origin
     dims = pts.shape[1]
     avg = np.average(pts, axis=0)
     translated_pts = pts - avg
 
+    # we want the average distance from the orgin to be sqrt(dimension)
     distances = np.linalg.norm(translated_pts, ord=dims, axis=1)
-    scale_factor = np.sqrt(dims)/np.average(distances)
+    avg_dist = np.average(distances)
+    scale_factor = np.sqrt(dims)/avg_dist
 
     new_points = translated_pts * scale_factor
 
@@ -35,7 +38,7 @@ def normalize_points(pts):
 def unnormalize_points(pts, avg, scale):
     return pts/scale + avg
 
-def dlt(real_points, screen_points, normalize=False):
+def dlt(real_points, screen_points, normalize_inp=True, normalize_out=True):
     # Given a list of real world points (e.g.? e.i? figure out later TODO x,y,z) 
     # and a list of correspoding screen points (x,y)
     #
@@ -75,7 +78,7 @@ def dlt(real_points, screen_points, normalize=False):
     # we can use it to find the null space of a matrix when the scaling factor in the V matrix is zero (or near zero, why not)
     # so we get p as the column in D that corresponds to the lowest scaling factor 
 
-    if normalize:
+    if normalize_inp:
         real, avg_real, scale_real = normalize_points(real_points)
         screen, avg_screen, scale_screen = normalize_points(screen_points)
     else:
@@ -125,12 +128,13 @@ def dlt(real_points, screen_points, normalize=False):
 
     P = p.reshape((3,4))
 
-    if normalize:
+    if normalize_inp:
         real_norm_matrix   = construct_normalization_matrix(4, avg_real, scale_real)
         screen_norm_matrix = construct_normalization_matrix(3, avg_screen, scale_screen)
         screen_norm_matrix_inv = np.linalg.inv(screen_norm_matrix)
-        return screen_norm_matrix_inv@P@real_norm_matrix
-    return P
+        P = screen_norm_matrix_inv@P@real_norm_matrix
+
+    return P/P[-1,-1] if normalize_out else P
 
 def get_projection_product_matricies(P):
     # now we have P = [H|h] H = KR, h = -KR<camera pos>
@@ -226,6 +230,9 @@ def generate_permutation_matrix(size, swaps):
 def vec(M):
     return M.flatten('F')
 
+def unvec(M, shape=(3,4)):
+    return M.reshape(shape, order='F')
+
 
 swaps = [[2,8], [5,9], [8,10]]
 swap_matrix = generate_permutation_matrix(12, swaps)
@@ -263,12 +270,11 @@ def camera_projection_levenberg_marquardt_jacobian_and_residual(P_curr, X, x):
     U = V @ D_inv
 
     T1 = np.kron(D_inv @ X.T, I_3)
-    T2 = khatri_rao_product(U, D_inv) @ X.T @ perm
+    T2 = khatri_rao_product(D_inv, U) @ X.T @ perm
 
     J = T1 - T2
     R = U - x
     return J, R
-
 
 def camera_projection_levenberg_marquardt_update(P_curr, X, x, lambd = 0):
     # The second derivative matrix is called the Hessian, it is linearly approximated by
@@ -292,10 +298,19 @@ def camera_projection_levenberg_marquardt_update(P_curr, X, x, lambd = 0):
 
     update = (H_inv + H_grad) @ g
 
-    cost = r.T @ r
+    return update
 
-    return update, cost
+def camera_project_points_operation(P, X):
+    V = P @ X
+    D = np.diag(V.T @ e_3)
+    D_inv = np.linalg.inv(D)
+    return V @ D_inv
 
+def camera_projection_compute_cost(P, X, x):
+    U = camera_project_points_operation(P, X)
+    R = U - x
+    r = vec(R)
+    return r.T @ r
 
 def camera_projection_levenberg_marquardt(real_points, screen_points, P_start, iters= 10, callback = None, call_every=10):
     X = to_homo_coords(real_points.T)
@@ -303,22 +318,30 @@ def camera_projection_levenberg_marquardt(real_points, screen_points, P_start, i
 
     lambd = 1e-3
 
-    prev_cost = None
-
     P_curr = P_start
+
+    prev_cost = camera_projection_compute_cost(P_curr, X, x)
     for i in range(iters):
-        update, cost = camera_projection_levenberg_marquardt_update(P_curr, X, x, lambd)
+        update = camera_projection_levenberg_marquardt_update(P_curr, X, x, lambd)
 
-        if prev_cost is None or cost < prev_cost:
+        p_canidate = vec(P_curr)
+        p_canidate = p_canidate - update
+        P_canidate = unvec(p_canidate)
 
-            p = vec(P_curr)
-            p_new = p - update
-            P_curr = p_new.reshape((3, 4))
+        print(P_canidate)
 
+        cost = camera_projection_compute_cost(P_canidate, X, x)
+
+        print(cost, prev_cost)
+
+        if cost < prev_cost:
+            P_curr = P_canidate
             prev_cost = cost
             lambd /=10
         else:
             lambd *= 10
+
+        print(lambd)
 
         if lambd > 1e20:
             raise RuntimeError("Optimization diverging too rapidly.")
@@ -430,12 +453,6 @@ def numerical_jacobian(f, inp):
 
             jacobian[:, inp_flat_coord] = jacobian_col
     return jacobian
-
-def camera_project_points_operation(P, X):
-    V = P @ X
-    D = np.diag(V.T @ e_3)
-    D_inv = np.linalg.inv(D)
-    return V @ D_inv
 
 def camera_project_points(P, real_points, raw_matrix=False):
     X = to_homo_coords(real_points.T)

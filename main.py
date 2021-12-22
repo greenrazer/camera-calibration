@@ -107,7 +107,7 @@ def default():
         [255,255,255], # White
         [0, 255, 255], # Yellow
         [255, 0, 0], # Blue
-        [250, 230, 230], # Purple
+        [250, 150, 150], # Purple
         [220, 220, 220], # Silver
         [0, 0, 255], # Red
         [0, 165, 255], # Orange
@@ -151,12 +151,25 @@ def default():
         internal, rotation, position = li_utils.get_projection_product_matricies(p)
         print(position)
         plt = draw_utils.show_scene(real_points_m, internal, rotation, position)
+    
+    def draw_on_pic(P):
+        new_points = li_utils.camera_project_points(P, real_points_m)
+        print(new_points)
 
-    points = np.array(points2)
+        drawn = image_utils.draw_points_on_image(imgs[0], new_points, colors)
+        cv2.imshow("hi", drawn)
+        # image_utils.show_image("howdy", drawn)
+
+    points = np.array(points1)
 
     P = li_utils.dlt(real_points_m, points)
 
+    print(P)
+
     display(P)
+    draw_on_pic(P)
+
+    P = li_utils.camera_projection_levenberg_marquardt(real_points_m, points, P, callback = display, call_every=1)
 
     # P = li_utils.camera_projection_levenberg_marquardt(real_points_m, points, P, callback = None)
 
@@ -167,16 +180,11 @@ def default():
     # plt = draw_utils.show_scene(real_points_m, internal, rotation, position)
 
     # P = li_utils.product_matricies_to_projection_matrix(internal, rotation, position)
-    # new_points = li_utils.camera_project_points(P, real_points_m)
-    # print(new_points)
-
-    # drawn = image_utils.draw_points_on_image(imgs[0], new_points, colors)
-    # image_utils.show_image("howdy", drawn)
     
     # li_utils.test_decomp2(real_points_m, np.array(points1))
     # # w = li_utils.SO_to_SE(rotation)
     # # R = li_utils.SE_to_SO(w)
-    new_points = li_utils.test_numerical_jacobian(real_points_m, np.array(points1))
+    # new_points = li_utils.test_numerical_jacobian(real_points_m, np.array(points1))
     # # li_utils.test_numerical_jacobian(real_points_m, np.array(points2))
     # # li_utils.test_numerical_jacobian(real_points_m, np.array(points3))
     # # li_utils.test_numerical_jacobian(real_points_m, np.array(points4))

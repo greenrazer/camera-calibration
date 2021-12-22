@@ -236,8 +236,13 @@ def draw_points_on_image(im, uv_points, colors = [[255, 255, 0]]):
     for point in uv_points:
         if point[0] < 0 or 1 < point[0] or point[1] < 0 or 1 < point[1]:
             continue
-        x = int(point[0] * im.shape[0])
-        y = int(point[1] * im.shape[1])
+
+        print(count)
+        print(im.shape)
+        print(point)
+        x = int(point[0] * im.shape[1])
+        y = int(point[1] * im.shape[0])
+        print((x,y))
         img = cv2.circle(img, (x,y), radius=10, color=colors[count % len(colors)], thickness=-1)
         count += 1
     return img

@@ -65,9 +65,11 @@ def direct_linear_transform(real_points, screen_points):
     # should be close to zero and the new estimated projection should be roughly equal
 
     A = np.random.rand(3,4)
+    A /= np.linalg.norm(A)
+    A /= A[-1, -1]
+    
     x = np.random.rand(3,12)
     x = li_utils.to_homo_coords(x)
-    A = A / np.linalg.norm(A)
 
     X_inp = li_utils.to_euclid_coords(x,   entire=False).T
     X_out = li_utils.to_euclid_coords(A@x, entire=False).T
