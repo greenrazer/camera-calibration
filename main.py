@@ -147,22 +147,26 @@ def default():
     np.set_printoptions(precision=1)
     np.set_printoptions(suppress=True)
 
-    # def display(p):
-    #     position, rotation, internal = li_utils.get_projection_product_matricies(p)
-    #     print(position)
-    #     plt = draw_utils.show_scene(real_points_m, position, rotation, internal)
+    def display(p):
+        internal, rotation, position = li_utils.get_projection_product_matricies(p)
+        print(position)
+        plt = draw_utils.show_scene(real_points_m, internal, rotation, position)
 
-    # P = li_utils.dlt(real_points_m, points)
+    points = np.array(points2)
 
-    # display(P)
+    P = li_utils.dlt(real_points_m, points)
+
+    display(P)
 
     # P = li_utils.camera_projection_levenberg_marquardt(real_points_m, points, P, callback = None)
 
     # display(P)
 
-    # position, rotation, internal = li_utils.calibrate_camera(real_points_m, np.array(points1))
+    # internal, rotation, position = li_utils.calibrate_camera(real_points_m, np.array(points1))
+    # print(position)
+    # plt = draw_utils.show_scene(real_points_m, internal, rotation, position)
 
-    # P = li_utils.internal_rotation_position_to_projection_matrix(internal, rotation, position)
+    # P = li_utils.product_matricies_to_projection_matrix(internal, rotation, position)
     # new_points = li_utils.camera_project_points(P, real_points_m)
     # print(new_points)
 

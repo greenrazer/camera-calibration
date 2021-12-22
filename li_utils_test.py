@@ -21,12 +21,12 @@ points5 = np.array([(0.53375, 0.5675), (0.5925, 0.665), (0.49, 0.48625), (0.5425
 
 tests = []
 
-def test_calibration(func):
+def test(func):
     def wrapper():
         print(f"Starting test \"{func.__name__}\"...")
         passed = True
         try:
-            temp_passed = func(real_points_m, points1)
+            temp_passed = func()
             if temp_passed is not None:
                 passed = temp_passed
         except Exception as e:
@@ -38,6 +38,13 @@ def test_calibration(func):
                 print(" L x Test Failed.")
     tests.append(wrapper)
     return wrapper
+
+
+def test_calibration(func):
+    def wrapper():
+        return func(real_points_m, points1)
+    wrapper.__name__ = func.__name__
+    return test(wrapper)
 
 @test_calibration
 def camera_matrix_decomposition(real_points, screen_points):
@@ -67,10 +74,10 @@ def direct_linear_transform(real_points, screen_points):
 
     A_new = li_utils.dlt(X_inp, X_out)
 
-    if np.isclose(li_utils.dyadic_dot_product(A, A_new), -1):
+    if np.allclose(li_utils.dyadic_dot_product(A, A_new), -1):
         A_new = -A_new
 
-    assert np.isclose(A, A_new).all(), "DLT not working"
+    assert np.allclose(A, A_new), "DLT not working"
 
     norm_real, avg_real, scale_real = li_utils.normalize_points(real_points)
     norm_screen, avg_screen, scale_screen = li_utils.normalize_points(screen_points)
@@ -87,14 +94,14 @@ def normalization_helper(pts):
     new_points, avg, scale = li_utils.normalize_points(pts)
 
     avg_pt = np.average(new_points, axis=0)
-    assert np.isclose(avg_pt, 0).all(), "Average point is not zero."
+    assert np.allclose(avg_pt, 0), "Average point is not zero."
 
     distances = np.linalg.norm(new_points, ord=dims, axis=1)
     avg_dist = np.average(distances) 
-    assert np.isclose(avg_dist, np.sqrt(dims)), f"Average of distances is {np.round(avg_dist,5)} instead of sqrt({dims})."
+    assert np.allclose(avg_dist, np.sqrt(dims)), f"Average of distances is {np.round(avg_dist,5)} instead of sqrt({dims})."
 
     old_points = li_utils.unnormalize_points(new_points, avg, scale)
-    assert np.isclose(old_points, pts).all(), "Reverse normalization failed."
+    assert np.allclose(old_points, pts), "Reverse normalization failed."
 
     norm_mat = li_utils.construct_normalization_matrix(dims+1, avg, scale)
     norm_mat_inv = np.linalg.inv(norm_mat)
@@ -103,17 +110,29 @@ def normalization_helper(pts):
     trans_X = norm_mat@X
     trans_points = li_utils.cut_last_row(trans_X).T
 
-    assert np.isclose(trans_points, new_points).all(), "normalization matrix incorrect"
+    assert np.allclose(trans_points, new_points), "normalization matrix incorrect"
 
     back_X = norm_mat_inv@trans_X
     back_points = li_utils.cut_last_row(back_X).T
 
-    assert np.isclose(back_points, pts).all(), "inverse normalization matrix incorrect"
+    assert np.allclose(back_points, pts), "inverse normalization matrix incorrect"
 
 @test_calibration
 def normalization(real_points, screen_points):
     normalization_helper(real_points)
     normalization_helper(screen_points)
+
+@test
+def axis_angle():
+    w1 = (np.random.rand(3)-0.5)*2*np.pi
+
+    while np.linalg.norm(w1) > np.pi:
+        w1 = (np.random.rand(3)-0.5)*2*np.pi
+
+    R1 = li_utils.rotation_angles_to_matrix(w1)
+    w1_again = li_utils.rotation_matrix_to_angles(R1)
+
+    assert np.allclose(w1, w1_again), "Applying inverse to matrix not working."
 
 if __name__ == '__main__':
     for test in tests:

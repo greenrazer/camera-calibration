@@ -7,26 +7,24 @@ def draw_vec(ax, from_pt, to_pt, color):
 def draw_point(ax, point, color):
     ax.scatter([point[0]], [point[1]], [point[2]], color=[color])
 
-def show_scene(points, pos, rot, inter, scale=1, box_radius=2):
+def show_scene(points, inter, rot, pos, scale=1, box_radius=2):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
 
     create_3d_scene(ax, points, pos, rot, inter, scale=scale, box_radius=box_radius)
     plt.show()
 
-def draw_rotation_matrix(ax, rot, scale=1):
-    rot_t = rot.T
-    zero = [0,0,0]
-    draw_vec(ax, zero, rot_t[0]*scale, [1,0,0])
-    draw_vec(ax, zero, rot_t[1]*scale, [0,1,0])
-    draw_vec(ax, zero, rot_t[2]*scale, [0,0,1])
+def draw_rotation_matrix(ax, rot, at=[0,0,0], scale=1):
+    draw_vec(ax, at, rot[0]*scale, [1,0,0])
+    draw_vec(ax, at, rot[1]*scale, [0,1,0])
+    draw_vec(ax, at, rot[2]*scale, [0,0,1])
 
 def create_3d_scene(ax, points, pos, rot, inter, scale=1, box_radius=2):
-    rot_t = rot.T
 
-    draw_vec(ax, pos, rot_t[0]*scale, [1,0,0])
-    draw_vec(ax, pos, rot_t[1]*scale, [0,1,0])
-    draw_vec(ax, pos, rot_t[2]*scale, [0,0,1])
+    # draw_vec(ax, pos, rot[0]*scale, [1,0,0])
+    # draw_vec(ax, pos, rot[1]*scale, [0,1,0])
+    # draw_vec(ax, pos, rot[2]*scale, [0,0,1])
+    draw_rotation_matrix(ax, rot, pos)
     draw_point(ax, pos, [0,0,0])
 
     colors = [

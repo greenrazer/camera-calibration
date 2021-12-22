@@ -9,7 +9,33 @@ rotate3d_around_z_180 = np.array([
     [0, 0, 1]
 ])
 
-def dlt(real_points, screen_points):
+def construct_normalization_matrix(dim, avg, scale):
+    trans_mat = np.zeros((dim, dim))
+    trans_mat[0:dim-1, 0:dim-1] = np.identity(dim-1)
+    trans_mat[0:dim-1, dim-1] = - avg
+    trans_mat *= scale
+    trans_mat[dim-1, dim-1] = 1
+    return trans_mat
+
+def normalize_points(pts):
+    # list of points in an np array not a matrix 
+    # column shape is the length of the dimenstions
+
+    dims = pts.shape[1]
+    avg = np.average(pts, axis=0)
+    translated_pts = pts - avg
+
+    distances = np.linalg.norm(translated_pts, ord=dims, axis=1)
+    scale_factor = np.sqrt(dims)/np.average(distances)
+
+    new_points = translated_pts * scale_factor
+
+    return new_points, avg, scale_factor
+
+def unnormalize_points(pts, avg, scale):
+    return pts/scale + avg
+
+def dlt(real_points, screen_points, normalize=False):
     # Given a list of real world points (e.g.? e.i? figure out later TODO x,y,z) 
     # and a list of correspoding screen points (x,y)
     #
@@ -49,22 +75,29 @@ def dlt(real_points, screen_points):
     # we can use it to find the null space of a matrix when the scaling factor in the V matrix is zero (or near zero, why not)
     # so we get p as the column in D that corresponds to the lowest scaling factor 
 
+    if normalize:
+        real, avg_real, scale_real = normalize_points(real_points)
+        screen, avg_screen, scale_screen = normalize_points(screen_points)
+    else:
+        real = real_points
+        screen = screen_points
+
     # OK step 1 build the M matrix
     M = []
-    for real, screen in zip(real_points, screen_points):
+    for xyz, uv in zip(real, screen):
         M.append([
-            - real[0],
-            - real[1],
-            - real[2],
+            - xyz[0],
+            - xyz[1],
+            - xyz[2],
             - 1,
             0,
             0,
             0,
             0,
-            screen[0]*real[0],
-            screen[0]*real[1],
-            screen[0]*real[2],
-            screen[0],
+            uv[0]*xyz[0],
+            uv[0]*xyz[1],
+            uv[0]*xyz[2],
+            uv[0],
         ])
 
         M.append([
@@ -72,14 +105,14 @@ def dlt(real_points, screen_points):
             0,
             0,
             0,
-            - real[0],
-            - real[1],
-            - real[2],
+            - xyz[0],
+            - xyz[1],
+            - xyz[2],
             - 1,
-            screen[1]*real[0],
-            screen[1]*real[1],
-            screen[1]*real[2],
-            screen[1],
+            uv[1]*xyz[0],
+            uv[1]*xyz[1],
+            uv[1]*xyz[2],
+            uv[1],
         ])
 
     M = np.array(M)
@@ -92,6 +125,11 @@ def dlt(real_points, screen_points):
 
     P = p.reshape((3,4))
 
+    if normalize:
+        real_norm_matrix   = construct_normalization_matrix(4, avg_real, scale_real)
+        screen_norm_matrix = construct_normalization_matrix(3, avg_screen, scale_screen)
+        screen_norm_matrix_inv = np.linalg.inv(screen_norm_matrix)
+        return screen_norm_matrix_inv@P@real_norm_matrix
     return P
 
 def get_projection_product_matricies(P):
@@ -144,33 +182,6 @@ def to_euclid_coords(x, entire=True):
         return X
     else:
         return cut_last_row(X)
-
-def construct_normalization_matrix(dim, avg, scale):
-    trans_mat = np.zeros((dim, dim))
-
-    trans_mat[0:dim-1, 0:dim-1] = np.identity(dim-1)
-    trans_mat[0:dim-1, dim-1] = - avg
-    trans_mat *= scale
-    trans_mat[dim-1, dim-1] = 1
-    return trans_mat
-
-def normalize_points(pts):
-    # list of points in an np array not a matrix 
-    # column shape is the length of the dimenstions
-
-    dims = pts.shape[1]
-    avg = np.average(pts, axis=0)
-    translated_pts = pts - avg
-
-    distances = np.linalg.norm(translated_pts, ord=dims, axis=1)
-    scale_factor = np.sqrt(dims)/np.average(distances)
-
-    new_points = translated_pts * scale_factor
-
-    return new_points, avg, scale_factor
-
-def unnormalize_points(pts, avg, scale):
-    return pts/scale + avg
 
 def dyadic_dot_product(A, B):
     return A.flatten('F').T @ B.flatten('F')
@@ -309,6 +320,9 @@ def camera_projection_levenberg_marquardt(real_points, screen_points, P_start, i
         else:
             lambd *= 10
 
+        if lambd > 1e20:
+            raise RuntimeError("Optimization diverging too rapidly.")
+
         if callback:
             if i % call_every == 0:
                 callback(P_curr)
@@ -319,9 +333,9 @@ def camera_projection_levenberg_marquardt(real_points, screen_points, P_start, i
 
 def calibrate_camera(real_points, screen_points):
     P_init = dlt(real_points, screen_points)
-    P = camera_projection_levenberg_marquardt(real_points, screen_points, P_init)
-    internal, rotation, position = get_projection_product_matricies(P)
-    return position, rotation, internal
+    # P = camera_projection_levenberg_marquardt(real_points, screen_points, P_init)
+    internal, rotation, position = get_projection_product_matricies(P_init)
+    return internal, rotation, position
 
 def w_to_w_times(w):
     return np.array([
@@ -368,20 +382,33 @@ def rotation_angles_to_matrix(w):
     # first_term = sin(|w|)/|w|
     # second_term = (1-cos(|w|))/|w|^2
     theta = np.linalg.norm(w)
-    t1 = np.sin(theta)/theta
-    t2 = (1-np.cos(theta))/(theta**2)
+    w_no_theta = w/theta
 
-    w_times = w_to_w_times(w)
+    t1 = np.sin(theta)
+    t2 = (1-np.cos(theta))
+
+    w_times = w_to_w_times(w_no_theta)
     return I_3 + t1*w_times + t2*w_times@w_times                        
 
 def rotation_matrix_to_angles(R):
     # rotation angles w
     # R^-1 = R^T
     # w_times = log(R) = exp^-1(R) = inverse of above
-    theta = np.arccos((np.trace(R)-1)/2)
-    t = theta/(2*np.sin(theta))
+    if np.allclose(R, I_3):
+        return np.array([0,0,0])
+
+    t = np.trace(R)
+
+    if np.allclose(t, -1):
+        o_p = 1+R[3,3]
+        v = 1/np.sqrt(2*o_p)
+        return v*np.array([R[0,2], R[1,2], o_p])
+
+    theta = np.arccos((t-1)/2)
+    t = 1/(2*np.sin(theta))
     w_times = t*(R-R.T)
-    return w_times_to_w(w_times)
+
+    return theta*w_times_to_w(w_times)
 
 def matrix_to_flat_coords(row, col, num_rows):
     return col*num_rows + row
@@ -447,10 +474,12 @@ def test_numerical_jacobian(real_points, screen_points):
     # J = numerical_jacobian(lambda P:P@X, np.ones((3,4)))
     # #I expect -> X.T kron I_3 -> works
 
-    pos, R, K = calibrate_camera(real_points, screen_points)
+    K, R, pos = calibrate_camera(real_points, screen_points)
     intrinsic = intrinsic_camera_matrix_to_vector(K)
     w = rotation_matrix_to_angles(R)
     curr_inp = np.array([intrinsic, w, vec(pos)]).T
+    print(intrinsic)
+    print(curr_inp)
 
     curr_inp += np.random.randn(*curr_inp.shape)
 
@@ -461,9 +490,7 @@ def test_numerical_jacobian(real_points, screen_points):
 
         return product_matricies_to_projection_matrix(K, R, p)
 
-    def func_V(inp):
-        P = func_to_proj(inp)
-
+    def func_V(P):
         V = P @ X
         return V
 
@@ -476,7 +503,8 @@ def test_numerical_jacobian(real_points, screen_points):
         return U - x
 
     def func_all(inp):
-        p1 = func_V(inp)
+        P = func_to_proj(inp)
+        p1 = func_V(P)
         p2 = func_D_inv(p1)
         return func_R(p2)
 
@@ -573,6 +601,9 @@ def test_numerical_jacobian(real_points, screen_points):
         else:
             lambd *= 10
 
+        if lambd > 1e20:
+            raise RuntimeError("Optimization diverging too rapidly.")
+
         if count % 100 == 0:
             intrinsic = curr_inp[:, 0]
             w = curr_inp[:, 1]
@@ -580,7 +611,7 @@ def test_numerical_jacobian(real_points, screen_points):
             K = intrinsic_vector_to_camera_matrix(intrinsic)
             R = rotation_angles_to_matrix(w)
             import draw_utils
-            draw_utils.show_scene(real_points, pos, R, K, box_radius=3)
+            draw_utils.show_scene(real_points, K, R, pos, box_radius=3)
 
         # prev_cost = cost
         # print(cost)
@@ -596,7 +627,7 @@ def test_numerical_jacobian(real_points, screen_points):
     print(pos)
 
     import draw_utils
-    draw_utils.show_scene(real_points, pos, R, K, box_radius=3)
+    draw_utils.show_scene(real_points, K, R, pos, box_radius=3)
 
     p1 = func_V(curr_inp)
     p2 = func_D_inv(p1)

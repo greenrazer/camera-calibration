@@ -234,7 +234,6 @@ def draw_points_on_image(im, uv_points, colors = [[255, 255, 0]]):
     img = im
     count = 0
     for point in uv_points:
-        print(point)
         if point[0] < 0 or 1 < point[0] or point[1] < 0 or 1 < point[1]:
             continue
         x = int(point[0] * im.shape[0])
