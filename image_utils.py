@@ -246,4 +246,3 @@ def draw_points_on_image(im, uv_points, colors = [[255, 255, 0]]):
         img = cv2.circle(img, (x,y), radius=10, color=colors[count % len(colors)], thickness=-1)
         count += 1
     return img
-

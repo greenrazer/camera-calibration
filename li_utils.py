@@ -441,8 +441,11 @@ def numerical_jacobian(f, inp):
     jacobian = np.zeros((out_0.shape[0]*out_0.shape[1], inp.shape[0]*inp.shape[1]))
     for col in range(inp.shape[1]):
         for row in range(inp.shape[0]):
-            # page 602 in [1]
-            epsilon = max(abs(inp[row, col]*1e-4), 1e-6)
+            # page 602 in multiple view geometry
+            # changed the values from the max of x*1e-4 and 1e-6
+            # to the max between x*1e-8 and 1e-8 because it seems to
+            # be more accurate
+            epsilon = max(abs(inp[row, col]*1e-8), 1e-8)
             inp[row, col] += epsilon
             out_temp = f(inp)
             inp[row, col] -= epsilon

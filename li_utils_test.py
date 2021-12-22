@@ -81,10 +81,7 @@ def direct_linear_transform(real_points, screen_points):
 
     assert np.allclose(A, A_new), "DLT not working"
 
-    norm_real, avg_real, scale_real = li_utils.normalize_points(real_points)
-    norm_screen, avg_screen, scale_screen = li_utils.normalize_points(screen_points)
-
-    P_before = li_utils.dlt(norm_real, norm_screen)
+    P_before = li_utils.dlt(real_points, screen_points)
 
     estimated_screen_points = li_utils.camera_project_points(P_before, real_points)
     P_after = li_utils.dlt(real_points, estimated_screen_points)
@@ -123,6 +120,23 @@ def normalization_helper(pts):
 def normalization(real_points, screen_points):
     normalization_helper(real_points)
     normalization_helper(screen_points)
+
+@test_calibration
+def camera_projection_jacobian(real_points, screen_points):
+    P = li_utils.dlt(real_points, screen_points)
+
+    X = li_utils.to_homo_coords(real_points.T)
+    x = li_utils.to_homo_coords(screen_points.T)
+
+    J1, _ = li_utils.camera_projection_levenberg_marquardt_jacobian_and_residual(P, X, x)
+
+    def resi(P):
+        return li_utils.camera_project_points_operation(P, X) - x
+
+    J2 = li_utils.numerical_jacobian(resi, P)
+
+    epsilon = 1e-7
+    assert (abs(J1 - J2) < epsilon).all(), f"Camera projection jacobian not roughy equal to the numerical estimation within {epsilon}"
 
 @test
 def axis_angle():
