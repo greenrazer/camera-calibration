@@ -90,10 +90,11 @@ def try3():
 
 def default():
     DIST = .33
+    # mirrored x = -x y = y z = z
     real_points_m = np.array([
         [0,0,0], # White
-        [DIST,0,0], # Yellow
-        [-DIST,0,0], # Blue
+        [-DIST,0,0], # Yellow
+        [DIST,0,0], # Blue
         [0,DIST,0], # Purple
         [0,-DIST,0], # Silver
         [0,0,DIST], # Red
@@ -122,6 +123,12 @@ def default():
     ]
 
     # points = image_utils.show_image_select_points('Select points', imgs[0], width=800, colors=colors, uv=True)
+    # print(points)
+    # im = image_utils.draw_points_on_image(imgs[0], points, colors)
+    # cv2.imshow("as", im)
+    # cv2.waitKey(0)
+
+    points0 = [(0.47666, 0.445), (0.91833333, 0.17875), (0.0316666667, 0.69625), (0.84, 0.79625), (0.203333333, 0.2175), (0.62, 0.5625), (0.205, 0.12)]
     points1 = [(0.515, 0.4975), (0.40375, 0.835), (0.59125, 0.25), (0.86375, 0.57875), (0.2075, 0.41625), (0.52, 0.64), (0.49625, 0.2525)]
     points2 = [[0.47166667,0.4475],[0.925,0.18], [0.03333333 ,0.69625], [0.83833333 ,0.79], [0.20833333 ,0.21625], [0.21333333 ,0.12], [0.62,0.56]]
     points3 = [(0.495, 0.59), (0.58, 0.87125), (0.43625, 0.37875), (0.47625, 0.69375), (0.5275, 0.42), (0.2125, 0.6575), (0.7525, 0.545)]
@@ -144,32 +151,36 @@ def default():
     # mpf.main_show()
 
 
-    np.set_printoptions(precision=1)
-    np.set_printoptions(suppress=True)
+    # np.set_printoptions(precision=1)
+    # np.set_printoptions(suppress=True)
+
+    points = np.array(points0)
 
     def display(p):
         internal, rotation, position = li_utils.get_projection_product_matricies(p)
         print(position)
         plt = draw_utils.show_scene(real_points_m, internal, rotation, position)
     
-    def draw_on_pic(P):
+    def draw_on_pic(P, booll=False):
+        print("hi")
         new_points = li_utils.camera_project_points(P, real_points_m)
-        print(new_points)
 
         drawn = image_utils.draw_points_on_image(imgs[0], new_points, colors)
-        cv2.imshow("hi", drawn)
-        # image_utils.show_image("howdy", drawn)
+        if booll:
+            image_utils.show_image("howdy", drawn)
+        print(new_points)
+        display(P)
 
-    points = np.array(points1)
 
-    P = li_utils.dlt(real_points_m, points)
+    # P = li_utils.dlt(real_points_m, points)
 
-    print(P)
+    # print(P)
 
-    display(P)
-    draw_on_pic(P)
+    # display(P)
+    # draw_on_pic(P, True)
 
-    P = li_utils.camera_projection_levenberg_marquardt(real_points_m, points, P, callback = display, call_every=1)
+
+    # P = li_utils.camera_projection_levenberg_marquardt(real_points_m, points, P, callback = draw_on_pic, call_every=1, iters=100)
 
     # P = li_utils.camera_projection_levenberg_marquardt(real_points_m, points, P, callback = None)
 
@@ -184,7 +195,12 @@ def default():
     # li_utils.test_decomp2(real_points_m, np.array(points1))
     # # w = li_utils.SO_to_SE(rotation)
     # # R = li_utils.SE_to_SO(w)
-    # new_points = li_utils.test_numerical_jacobian(real_points_m, np.array(points1))
+    P = li_utils.test_numerical_jacobian(real_points_m, points)#, callb= draw_on_pic)
+    _, _, _, P_s = li_utils.calibrate_camera(real_points_m, points)
+    P2 = li_utils.numerical_camera_projection_levenberg_marquardt(real_points_m, points, P_s)#, callback=draw_on_pic)
+    draw_on_pic(P, booll=True)
+    draw_on_pic(P2, booll=True)
+    print(P-P2)
     # # li_utils.test_numerical_jacobian(real_points_m, np.array(points2))
     # # li_utils.test_numerical_jacobian(real_points_m, np.array(points3))
     # # li_utils.test_numerical_jacobian(real_points_m, np.array(points4))

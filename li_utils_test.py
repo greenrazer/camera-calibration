@@ -29,7 +29,7 @@ def test(func):
             temp_passed = func()
             if temp_passed is not None:
                 passed = temp_passed
-        except Exception as e:
+        except AssertionError as e:
             print(" L x Test Failed with error : ", e)
         else:
             if passed:
@@ -52,11 +52,9 @@ def camera_matrix_decomposition(real_points, screen_points):
     K, R, pos = li_utils.get_projection_product_matricies(P_before)
     P_after = li_utils.product_matricies_to_projection_matrix(K, R, pos)
 
-    xt = np.random.rand(4,100)
-    U_before = li_utils.camera_project_points_operation(P_before, xt)
-    U_after = li_utils.camera_project_points_operation(P_after, xt)
+    P_after /= P_after[-1, -1]
 
-    return li_utils.matrix_approx_equal(U_before, U_after)
+    assert np.allclose(P_before, P_after), "Projection matrix decomp not working"
 
 @test_calibration
 def direct_linear_transform(real_points, screen_points):
@@ -75,9 +73,6 @@ def direct_linear_transform(real_points, screen_points):
     X_out = li_utils.to_euclid_coords(A@x, entire=False).T
 
     A_new = li_utils.dlt(X_inp, X_out)
-
-    if np.allclose(li_utils.dyadic_dot_product(A, A_new), -1):
-        A_new = -A_new
 
     assert np.allclose(A, A_new), "DLT not working"
 
@@ -149,6 +144,30 @@ def axis_angle():
     w1_again = li_utils.rotation_matrix_to_angles(R1)
 
     assert np.allclose(w1, w1_again), "Applying inverse to matrix not working."
+
+@test
+def vec():
+    A = np.random.rand(3,4)
+    a = li_utils.vec(A)
+    A_new = li_utils.unvec(a)
+
+    assert np.allclose(A, A_new), "vec or unvec not working for matrix"
+
+    shape = (3,4,5)
+    A = np.random.rand(*shape)
+    a = li_utils.vec(A)
+    A_new = li_utils.unvec(a, shape)
+
+    assert np.allclose(A, A_new), "vec or unvec not working for 3 rank tensor"
+
+    shape = (3, 4, 5, 6)
+    A = np.random.rand(*shape)
+    a = li_utils.vec(A)
+    A_new = li_utils.unvec(a, shape)
+
+    assert np.allclose(A, A_new), "vec or unvec not working for 4 rank tensor"
+    
+
 
 if __name__ == '__main__':
     for test in tests:

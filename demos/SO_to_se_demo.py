@@ -42,7 +42,7 @@ w3_slider = Slider(
 )
 
 w = np.array([0.0, 0.0, 0.00001])
-R = li_utils.SE_to_SO(w)
+R = li_utils.rotation_angles_to_matrix(w)
 draw_utils.draw_rotation_matrix(ax, R)
 
 def update(val):
@@ -51,7 +51,8 @@ def update(val):
     ax.set_ylim([-1, 1])
     ax.set_zlim([-1, 1])
     w = np.array([w1_slider.val, w2_slider.val, w3_slider.val])
-    R = li_utils.SE_to_SO(w)
+    w1_slider.val = 3.14
+    R = li_utils.rotation_angles_to_matrix(w)
     draw_utils.draw_rotation_matrix(ax, R)
 
 

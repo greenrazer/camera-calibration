@@ -237,12 +237,36 @@ def draw_points_on_image(im, uv_points, colors = [[255, 255, 0]]):
         if point[0] < 0 or 1 < point[0] or point[1] < 0 or 1 < point[1]:
             continue
 
-        print(count)
-        print(im.shape)
-        print(point)
-        x = int(point[0] * im.shape[1])
-        y = int(point[1] * im.shape[0])
-        print((x,y))
+        x = int(point[1] * im.shape[1])
+        y = int(point[0] * im.shape[0])
+
         img = cv2.circle(img, (x,y), radius=10, color=colors[count % len(colors)], thickness=-1)
         count += 1
     return img
+
+# def draw_points_and_error_on_image(im, uv_points_pred, uv_points, colors = [[255, 255, 0]]):
+#     im = draw_points_on_image(im, uv_points_pred, colors)
+#     count = 0
+#     for pred, actual in zip(uv_points_pred, uv_points):
+#         print(pred, actual)
+
+#         if pred[0] < 0 or 1 < pred[0] or pred[1] < 0 or 1 < pred[1]:
+#             continue
+
+#         if actual[0] < 0 or 1 < actual[0] or actual[1] < 0 or 1 < actual[1]:
+#             continue
+        
+#         color = colors[count % len(colors)]
+#         print(color)
+
+#         x_p = int(pred[1] * im.shape[1])
+#         y_p = int(pred[0] * im.shape[0])
+
+#         x = int(actual[1] * im.shape[1])
+#         y = int(actual[0] * im.shape[0])
+
+#         print((y_p, x_p),'->' , (y, x))
+
+#         im = cv2.arrowedLine(im, [y_p, x_p], [y, x], color=color,thickness=6)
+#         count += 1
+#     return im

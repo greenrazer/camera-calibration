@@ -187,8 +187,14 @@ def to_euclid_coords(x, entire=True):
     else:
         return cut_last_row(X)
 
+def vec(M):
+    return M.flatten('F')
+
+def unvec(M, shape=(3,4)):
+    return M.reshape(shape, order='F')
+
 def dyadic_dot_product(A, B):
-    return A.flatten('F').T @ B.flatten('F')
+    return vec(A).T @ vec(B)
 
 def linear_gauss_newton_method(real_points, screen_points, P_start, callback = None):
     # https://math.stackexchange.com/questions/4006567/how-jacobian-is-defined-for-the-function-of-a-matrix
@@ -226,13 +232,6 @@ def generate_permutation_matrix(size, swaps):
     for s in swaps:
         K[:,[s[1],s[0]]] = K[:,[s[0],s[1]]]
     return K
-
-def vec(M):
-    return M.flatten('F')
-
-def unvec(M, shape=(3,4)):
-    return M.reshape(shape, order='F')
-
 
 swaps = [[2,8], [5,9], [8,10]]
 swap_matrix = generate_permutation_matrix(12, swaps)
@@ -312,7 +311,7 @@ def camera_projection_compute_cost(P, X, x):
     r = vec(R)
     return r.T @ r
 
-def camera_projection_levenberg_marquardt(real_points, screen_points, P_start, iters= 10, callback = None, call_every=10):
+def camera_projection_levenberg_marquardt(real_points, screen_points, P_start, iters= 10, callback = None):
     X = to_homo_coords(real_points.T)
     x = to_homo_coords(screen_points.T)
 
@@ -320,7 +319,7 @@ def camera_projection_levenberg_marquardt(real_points, screen_points, P_start, i
 
     P_curr = P_start
 
-    prev_cost = camera_projection_compute_cost(P_curr, X, x)
+    min_cost = camera_projection_compute_cost(P_curr, X, x)
     for i in range(iters):
         update = camera_projection_levenberg_marquardt_update(P_curr, X, x, lambd)
 
@@ -328,37 +327,24 @@ def camera_projection_levenberg_marquardt(real_points, screen_points, P_start, i
         p_canidate = p_canidate - update
         P_canidate = unvec(p_canidate)
 
-        print(P_canidate)
-
         cost = camera_projection_compute_cost(P_canidate, X, x)
 
-        print(cost, prev_cost)
-
-        if cost < prev_cost:
+        if cost < min_cost:
             P_curr = P_canidate
-            prev_cost = cost
+            min_cost = cost
             lambd /=10
+            if callback:
+                callback(P_curr)
         else:
             lambd *= 10
 
-        print(lambd)
-
         if lambd > 1e20:
-            raise RuntimeError("Optimization diverging too rapidly.")
-
-        if callback:
-            if i % call_every == 0:
-                callback(P_curr)
+            raise RuntimeError("Optimization diverging too rapidly. Try lowering the iterations.")
+  
     if callback:
         callback(P_curr)
 
     return P_curr
-
-def calibrate_camera(real_points, screen_points):
-    P_init = dlt(real_points, screen_points)
-    # P = camera_projection_levenberg_marquardt(real_points, screen_points, P_init)
-    internal, rotation, position = get_projection_product_matricies(P_init)
-    return internal, rotation, position
 
 def w_to_w_times(w):
     return np.array([
@@ -374,14 +360,17 @@ def w_times_to_w(w_times):
         w_times[1,0]
     ])
 
-def intrinsic_camera_matrix_to_vector(K):
+def intrinsic_camera_matrix_to_vector(K, full=True):
     # intrinsic vector in my program is defined as
     # k = [f_x, s, x_0, f_y, y_0]
     # we will assume f_x and f_y are the same, and s is 0
     # so the final output will be [f, x_0, y_0]
-    return np.array([K[0,0], K[0,2], K[1,2]])
+    if full:
+        return np.array([K[0,0], K[0,1], K[1,1], K[0,2], K[1,2]])
+    else:
+        return np.array([K[0,0], K[0,2], K[1,2]])
 
-def intrinsic_vector_to_camera_matrix(k):
+def intrinsic_vector_to_camera_matrix(k, full=True):
     # normally
     # f = k[0] = f_x -> (0,0)
     # s = 0 -> (0,1)
@@ -390,11 +379,18 @@ def intrinsic_vector_to_camera_matrix(k):
     # k[2] = y_0 -> (1,2)
     # 1 -> (2,2)
     # 0 everywhere else
-    return np.array([
-        [k[0], 0,    k[1]],
-        [0,    k[0], k[2]],
-        [0,    0,    1],
-    ])
+    if full:
+        return np.array([
+            [k[0], k[1], k[3]],
+            [0,    k[2], k[4]],
+            [0,    0,    1   ]
+        ])
+    else:
+        return np.array([
+            [k[0], 0,    k[1]],
+            [0,    k[0], k[2]],
+            [0,    0,    1],
+        ])
 
 
 def rotation_angles_to_matrix(w):
@@ -433,29 +429,46 @@ def rotation_matrix_to_angles(R):
 
     return theta*w_times_to_w(w_times)
 
-def matrix_to_flat_coords(row, col, num_rows):
-    return col*num_rows + row
+
+class NDArrayIterator:
+    def __init__(self, arr):
+        self.max_counts = [i for i in arr.shape]
+
+    def __count_increment(self):
+        for i in range(len(self.count)):
+            self.count[i] += 1
+            if self.count[i] < self.max_counts[i]:
+                return True
+            self.count[i] -= self.max_counts[i]
+        return False
+
+    def __iter__(self):
+        self.count = [0 for _ in self.max_counts]
+        self.start = True
+        return self
+
+    def __next__(self):
+        if self.start or self.__count_increment():
+            self.start = False
+            return tuple(self.count)
+        raise StopIteration
 
 def numerical_jacobian(f, inp):
     out_0 = f(inp)
-    jacobian = np.zeros((out_0.shape[0]*out_0.shape[1], inp.shape[0]*inp.shape[1]))
-    for col in range(inp.shape[1]):
-        for row in range(inp.shape[0]):
-            # page 602 in multiple view geometry
-            # changed the values from the max of x*1e-4 and 1e-6
-            # to the max between x*1e-8 and 1e-8 because it seems to
-            # be more accurate
-            epsilon = max(abs(inp[row, col]*1e-8), 1e-8)
-            inp[row, col] += epsilon
-            out_temp = f(inp)
-            inp[row, col] -= epsilon
+    jacobian = np.zeros((*out_0.shape, *inp.shape))
+    for index in NDArrayIterator(inp):
+        epsilon = max(abs(inp[index]*1e-8), 1e-8)
+        inp[index] += epsilon
+        out_temp = f(inp)
+        inp[index] -= epsilon
 
-            dout_dinp = (out_temp - out_0)/epsilon
-            jacobian_col = vec(dout_dinp)
-            inp_flat_coord = matrix_to_flat_coords(row, col, inp.shape[0])
+        dout_dinp = (out_temp - out_0)/epsilon
 
-            jacobian[:, inp_flat_coord] = jacobian_col
-    return jacobian
+        jac_ind = tuple(slice(None, None, None) for i in range(len(out_0.shape))) + index
+        jacobian[jac_ind] = dout_dinp
+
+    size = (np.prod(out_0.shape), np.prod(inp.shape))
+    return unvec(jacobian, shape=size)
 
 def camera_project_points(P, real_points, raw_matrix=False):
     X = to_homo_coords(real_points.T)
@@ -472,16 +485,97 @@ def matrix_approx_equal(A, B, epsilon=1e-7, debug=False):
     return not bool_mat.any()
 
 def product_matricies_to_projection_matrix(K, R, p):
-    # Rotate matricies back 180 degrees over z axis
-    # K_r = rotate3d_around_z_180 @ K 
-    # R_r = rotate3d_around_z_180 @ R
-
     H = K@R
     camera_matrix = np.hstack((I_3, -p))
     P_new = H@camera_matrix
     return P_new
 
-def test_numerical_jacobian(real_points, screen_points):
+def assemble_feature_vector(P):
+    internal, rotation, position = get_projection_product_matricies(P)
+
+    intrinsic = intrinsic_camera_matrix_to_vector(internal)
+    w = rotation_matrix_to_angles(rotation)
+    feature_vec = np.concatenate([intrinsic, w, vec(position)])
+
+    return feature_vec
+
+INTRINSIC_SLICE = slice(0,5)
+ROTATION_ANGLE_SLICE = slice(5,8)
+POSITION_SLICE = slice(8,11)
+
+def disassemble_feature_vector(feature_vec):
+    K = intrinsic_vector_to_camera_matrix(feature_vec[INTRINSIC_SLICE])
+    R = rotation_angles_to_matrix(feature_vec[ROTATION_ANGLE_SLICE])
+    p = feature_vec[POSITION_SLICE][...,None]
+
+    P = product_matricies_to_projection_matrix(K, R, p)
+
+    return P
+
+def make_projection_function(X, x):
+    def wrapper(inp):
+        P = disassemble_feature_vector(inp)
+        return camera_project_points_operation(P, X) - x
+    return wrapper
+
+def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, P_start, iters=10, callback = None):
+    X = to_homo_coords(real_points.T)
+    x = to_homo_coords(screen_points.T)
+
+    min_cost = camera_projection_compute_cost(P_start, X, x)
+
+    curr_inp = assemble_feature_vector(P_start)
+    func = make_projection_function(X, x)
+
+    lambd = 1e-4
+
+    for _ in range(iters):
+        J = numerical_jacobian(func, curr_inp)
+
+        H = J.T @ J
+        H_inv = np.linalg.pinv(H)
+        
+        H_grad = lambd*np.diag(H)
+        R = func(curr_inp)
+        r = vec(R)
+        g = J.T @ r
+
+        update = (H_inv + H_grad) @ g
+
+        curr_inp_canidate = curr_inp - update
+
+        R = func(curr_inp_canidate)
+        r = vec(R)
+        cost = r.T @ r
+
+        if cost < min_cost:
+            curr_inp = curr_inp_canidate
+            min_cost = cost
+            lambd /= 10
+
+            if callback:
+                P = disassemble_feature_vector(curr_inp)
+                callback(P)
+        else:
+            lambd *= 10
+
+        if lambd > 1e15:
+            raise RuntimeError("Optimization diverging too rapidly.")
+
+    P = disassemble_feature_vector(curr_inp)
+
+    if callback:
+        callback(P)
+
+    return P
+
+def calibrate_camera(real_points, screen_points):
+    P_init = dlt(real_points, screen_points)
+    P = camera_projection_levenberg_marquardt(real_points, screen_points, P_init)
+    internal, rotation, position = get_projection_product_matricies(P)
+    return internal, rotation, position, P
+
+def test_numerical_jacobian(real_points, screen_points, callb=None):
     X = to_homo_coords(real_points.T)
     x = to_homo_coords(screen_points.T)
 
@@ -494,19 +588,35 @@ def test_numerical_jacobian(real_points, screen_points):
     # J = numerical_jacobian(lambda P:P@X, np.ones((3,4)))
     # #I expect -> X.T kron I_3 -> works
 
-    K, R, pos = calibrate_camera(real_points, screen_points)
-    intrinsic = intrinsic_camera_matrix_to_vector(K)
-    w = rotation_matrix_to_angles(R)
-    curr_inp = np.array([intrinsic, w, vec(pos)]).T
-    print(intrinsic)
-    print(curr_inp)
+    K, R, pos, P = calibrate_camera(real_points, screen_points)
 
-    curr_inp += np.random.randn(*curr_inp.shape)
+    # PP = product_matricies_to_projection_matrix(K, R, pos)
+    # callb(PP, True)
+
+    intrinsic = intrinsic_camera_matrix_to_vector(K, full=True)
+    w = rotation_matrix_to_angles(R)
+    # curr_inp = np.array([intrinsic, w, vec(pos)]).T
+    curr_inp = np.concatenate([intrinsic, w, vec(pos)])
+    print(curr_inp)
+    INTRINSIC_SLICE = slice(0,5)
+    ROTATION_ANGLE_SLICE = slice(5,8)
+    POSITION_SLICE = slice(8,11)
+
+    # curr_inp += np.random.randn(*curr_inp.shape)*0.3
 
     def func_to_proj(inp):
-        K = intrinsic_vector_to_camera_matrix(inp[:,0])
-        R = rotation_angles_to_matrix(inp[:,1])
-        p = inp[:,2][...,None]
+        K = intrinsic_vector_to_camera_matrix(inp[INTRINSIC_SLICE], full=True)
+        R = rotation_angles_to_matrix(inp[ROTATION_ANGLE_SLICE])
+        p = inp[POSITION_SLICE][...,None]
+
+
+        # K = np.array([[-1.3,  0.  , 0.6],
+        #                 [ 0.,   1. ,  0.6],
+        #                 [ 0.,   0.,   1. ]])
+        # p = np.array([[ 0. ],
+        #                 [ 0.4],
+        #                 [-0.7]])
+
 
         return product_matricies_to_projection_matrix(K, R, p)
 
@@ -527,6 +637,11 @@ def test_numerical_jacobian(real_points, screen_points):
         p1 = func_V(P)
         p2 = func_D_inv(p1)
         return func_R(p2)
+
+    def cost(inp):
+        R = func_all(inp)
+        r = vec(R)
+        return r.T @ r
 
     # from autograd import jacobian
     # J0 = jacobian(func_all)(curr_inp).reshape((21,9), order='F')
@@ -570,29 +685,28 @@ def test_numerical_jacobian(real_points, screen_points):
     # return
     min_cost_diff = 1e-6
     cost_diff = min_cost_diff+1
-    prev_cost = None
+    prev_cost = cost(curr_inp)
 
     count = 0
 
-    lambd = 1e-3
+    lambd = 1e-7
 
-    for _ in range(100):
+    for _ in range(10):
         J = numerical_jacobian(func_all, curr_inp)
+        # J2 = numerical_jacobian_1D(func_all, curr_inp)
+        # print(abs(J- J2))
+        # return
         # print(J)
         # print(J)
         # J = J0(curr_inp).reshape((21,9), order='F')
         # print("J")
         # print(J.shape)
 
-        pos = curr_inp[:,2]
+        pos = curr_inp[POSITION_SLICE]
         print(pos)
 
         H = J.T @ J
-        try:
-            H_inv = np.linalg.inv(H)
-        except np.linalg.LinAlgError:
-            H += np.random.randn(*H.shape)
-            H_inv = np.linalg.inv(H)
+        H_inv = np.linalg.pinv(H)
         
         H_grad = lambd*np.diag(H)
         R = func_all(curr_inp)
@@ -603,9 +717,11 @@ def test_numerical_jacobian(real_points, screen_points):
 
         # print(lambd)
 
-        curr_inp_canidate = curr_inp.flatten('F') - update
-
-        curr_inp_canidate = curr_inp_canidate.reshape(3,3, order='F')
+        curr_inp_canidate = curr_inp
+        print("update:")
+        print(update)
+        curr_inp_canidate -= update
+        # curr_inp_canidate = unvec(curr_inp_canidate, (3,3))
 
         R = func_all(curr_inp_canidate)
         r = vec(R)
@@ -615,46 +731,54 @@ def test_numerical_jacobian(real_points, screen_points):
         print('cost', cost)
 
         if prev_cost is None or cost < prev_cost:
+            print("hi2")
             curr_inp = curr_inp_canidate
             prev_cost = cost
             lambd /= 10
+
+
+            intrinsic = curr_inp[INTRINSIC_SLICE]
+            w = curr_inp[ROTATION_ANGLE_SLICE]
+            pos = curr_inp[POSITION_SLICE]
+            K = intrinsic_vector_to_camera_matrix(intrinsic, full=True)
+            R = rotation_angles_to_matrix(w)
+            import draw_utils
+            # draw_utils.show_scene(real_points, K, R, pos, box_radius=3)
+            PP = product_matricies_to_projection_matrix(K, R, pos[...,None])
+            if callb:
+                callb(PP)
         else:
             lambd *= 10
 
-        if lambd > 1e20:
+        if lambd > 1e15:
             raise RuntimeError("Optimization diverging too rapidly.")
 
-        if count % 100 == 0:
-            intrinsic = curr_inp[:, 0]
-            w = curr_inp[:, 1]
-            pos = curr_inp[:, 2]
-            K = intrinsic_vector_to_camera_matrix(intrinsic)
-            R = rotation_angles_to_matrix(w)
-            import draw_utils
-            draw_utils.show_scene(real_points, K, R, pos, box_radius=3)
 
         # prev_cost = cost
         # print(cost)
 
         count += 1
     
-    intrinsic = curr_inp[:, 0]
-    w = curr_inp[:, 1]
-    pos = curr_inp[:, 2]
-    K = intrinsic_vector_to_camera_matrix(intrinsic)
+    intrinsic = curr_inp[INTRINSIC_SLICE]
+    w = curr_inp[ROTATION_ANGLE_SLICE]
+    pos = curr_inp[POSITION_SLICE]
+    K = intrinsic_vector_to_camera_matrix(intrinsic, full=True)
     R = rotation_angles_to_matrix(w)
 
     print(pos)
 
-    import draw_utils
-    draw_utils.show_scene(real_points, K, R, pos, box_radius=3)
+    # import draw_utils
+    # draw_utils.show_scene(real_points, K, R, pos, box_radius=3)
+    PP = product_matricies_to_projection_matrix(K, R, pos[...,None])
+    if callb:
+        callb(PP, booll=True)
 
-    p1 = func_V(curr_inp)
+    return PP
+
+    z = func_to_proj(curr_inp)
+    p1 = func_V(z)
     p2 = func_D_inv(p1)
     return cut_last_row(p2).T
-
-    
-
 
 
 
