@@ -38,7 +38,7 @@ def normalize_points(pts):
 def unnormalize_points(pts, avg, scale):
     return pts/scale + avg
 
-def dlt(real_points, screen_points, normalize_inp=True, normalize_out=True):
+def dlt(real_points, screen_points, normalize_inp=True):
     # Given a list of real world points (e.g.? e.i? figure out later TODO x,y,z) 
     # and a list of correspoding screen points (x,y)
     #
@@ -78,16 +78,9 @@ def dlt(real_points, screen_points, normalize_inp=True, normalize_out=True):
     # we can use it to find the null space of a matrix when the scaling factor in the V matrix is zero (or near zero, why not)
     # so we get p as the column in D that corresponds to the lowest scaling factor 
 
-    if normalize_inp:
-        real, avg_real, scale_real = normalize_points(real_points)
-        screen, avg_screen, scale_screen = normalize_points(screen_points)
-    else:
-        real = real_points
-        screen = screen_points
-
     # OK step 1 build the M matrix
     M = []
-    for xyz, uv in zip(real, screen):
+    for xyz, uv in zip(real_points, screen_points):
         M.append([
             - xyz[0],
             - xyz[1],
@@ -128,13 +121,7 @@ def dlt(real_points, screen_points, normalize_inp=True, normalize_out=True):
 
     P = p.reshape((3,4))
 
-    if normalize_inp:
-        real_norm_matrix   = construct_normalization_matrix(4, avg_real, scale_real)
-        screen_norm_matrix = construct_normalization_matrix(3, avg_screen, scale_screen)
-        screen_norm_matrix_inv = np.linalg.inv(screen_norm_matrix)
-        P = screen_norm_matrix_inv@P@real_norm_matrix
-
-    return P/P[-1,-1] if normalize_out else P
+    return P/P[-1,-1]
 
 def get_projection_product_matricies(P):
     # now we have P = [H|h] H = KR, h = -KR<camera pos>
@@ -315,7 +302,7 @@ def camera_projection_levenberg_marquardt(real_points, screen_points, P_start, i
     X = to_homo_coords(real_points.T)
     x = to_homo_coords(screen_points.T)
 
-    lambd = 1e-3
+    lambd = 1e-4
 
     P_curr = P_start
 
@@ -344,7 +331,7 @@ def camera_projection_levenberg_marquardt(real_points, screen_points, P_start, i
     if callback:
         callback(P_curr)
 
-    return P_curr
+    return P_curr/P_curr[-1,-1]
 
 def w_to_w_times(w):
     return np.array([
@@ -567,218 +554,22 @@ def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, 
     if callback:
         callback(P)
 
-    return P
+    return P/P[-1,-1]
 
 def calibrate_camera(real_points, screen_points):
-    P_init = dlt(real_points, screen_points)
-    P = camera_projection_levenberg_marquardt(real_points, screen_points, P_init)
-    internal, rotation, position = get_projection_product_matricies(P)
-    return internal, rotation, position, P
+    real, avg_real, scale_real = normalize_points(real_points)
+    screen, avg_screen, scale_screen = normalize_points(screen_points)
 
-def test_numerical_jacobian(real_points, screen_points, callb=None):
-    X = to_homo_coords(real_points.T)
-    x = to_homo_coords(screen_points.T)
+    P = dlt(real, screen)
+    P = camera_projection_levenberg_marquardt(real, screen, P)
+    P = numerical_camera_projection_levenberg_marquardt(real, screen, P)
 
-    # def x(inp):
-    #     return 3*inp
+    real_norm_matrix  = construct_normalization_matrix(4, avg_real, scale_real)
+    screen_norm_matrix = construct_normalization_matrix(3, avg_screen, scale_screen)
+    screen_norm_matrix_inv = np.linalg.inv(screen_norm_matrix)
+    P = screen_norm_matrix_inv@P@real_norm_matrix
 
-    # J = numerical_jacobian(x, np.array([[1.0,2.0],[3.0,4.0]]))
-    # #I expect -> I_4*3.0 -> works
-
-    # J = numerical_jacobian(lambda P:P@X, np.ones((3,4)))
-    # #I expect -> X.T kron I_3 -> works
-
-    K, R, pos, P = calibrate_camera(real_points, screen_points)
-
-    # PP = product_matricies_to_projection_matrix(K, R, pos)
-    # callb(PP, True)
-
-    intrinsic = intrinsic_camera_matrix_to_vector(K, full=True)
-    w = rotation_matrix_to_angles(R)
-    # curr_inp = np.array([intrinsic, w, vec(pos)]).T
-    curr_inp = np.concatenate([intrinsic, w, vec(pos)])
-    print(curr_inp)
-    INTRINSIC_SLICE = slice(0,5)
-    ROTATION_ANGLE_SLICE = slice(5,8)
-    POSITION_SLICE = slice(8,11)
-
-    # curr_inp += np.random.randn(*curr_inp.shape)*0.3
-
-    def func_to_proj(inp):
-        K = intrinsic_vector_to_camera_matrix(inp[INTRINSIC_SLICE], full=True)
-        R = rotation_angles_to_matrix(inp[ROTATION_ANGLE_SLICE])
-        p = inp[POSITION_SLICE][...,None]
-
-
-        # K = np.array([[-1.3,  0.  , 0.6],
-        #                 [ 0.,   1. ,  0.6],
-        #                 [ 0.,   0.,   1. ]])
-        # p = np.array([[ 0. ],
-        #                 [ 0.4],
-        #                 [-0.7]])
-
-
-        return product_matricies_to_projection_matrix(K, R, p)
-
-    def func_V(P):
-        V = P @ X
-        return V
-
-    def func_D_inv(V):
-        D = np.diag(V.T @ e_3)
-        D_inv = np.linalg.inv(D)
-        return V @ D_inv
-
-    def func_R(U):
-        return U - x
-
-    def func_all(inp):
-        P = func_to_proj(inp)
-        p1 = func_V(P)
-        p2 = func_D_inv(p1)
-        return func_R(p2)
-
-    def cost(inp):
-        R = func_all(inp)
-        r = vec(R)
-        return r.T @ r
-
-    # from autograd import jacobian
-    # J0 = jacobian(func_all)(curr_inp).reshape((21,9), order='F')
-    # J1 = numerical_jacobian(func_all, curr_inp)
-    # print(J0.shape, J1.shape, J2.shape)
-    # print("0")
-    # print(J0)
-    # print(J1)
-    # eq = matrix_approx_equal(J0, J1)
-
-    # # print("1")
-    # # print(J1)
-    # # print("2")
-    # # print(J2)
-
-    # # return
-
-    # J0 = jacobian(func_all)
-
-    # k = 10
-    # n = 3
-    # m = 4
-    # R = np.arange(n*k).reshape((n,k))
-    # print(R)
-    # r = R.flatten(order='F')[...,None]
-    # print(r)
-
-    # J = np.arange(n*k*n*m).reshape((n,k,n,m))
-    # print(J[1,1, :, :])
-    # print(J[1,2, :, :])
-    # print(J[1,3, :, :])
-    # print(J[1,4, :, :])
-    # print(J[2,1, :, :])
-    # print(J[2,2, :, :])
-    # print(J[2,3, :, :])
-    # print(J[2,4, :, :])
-    # j0 = np.arange(n*k*n*m).reshape((n*m, n*k))
-    # j1 = J.reshape((n*k, n*m))
-    # print(j0)
-    # # matrix_approx_equal(j0, j1)
-    # return
-    min_cost_diff = 1e-6
-    cost_diff = min_cost_diff+1
-    prev_cost = cost(curr_inp)
-
-    count = 0
-
-    lambd = 1e-7
-
-    for _ in range(10):
-        J = numerical_jacobian(func_all, curr_inp)
-        # J2 = numerical_jacobian_1D(func_all, curr_inp)
-        # print(abs(J- J2))
-        # return
-        # print(J)
-        # print(J)
-        # J = J0(curr_inp).reshape((21,9), order='F')
-        # print("J")
-        # print(J.shape)
-
-        pos = curr_inp[POSITION_SLICE]
-        print(pos)
-
-        H = J.T @ J
-        H_inv = np.linalg.pinv(H)
-        
-        H_grad = lambd*np.diag(H)
-        R = func_all(curr_inp)
-        r = vec(R)
-        g = J.T @ r
-
-        update = (H_inv + H_grad) @ g
-
-        # print(lambd)
-
-        curr_inp_canidate = curr_inp
-        print("update:")
-        print(update)
-        curr_inp_canidate -= update
-        # curr_inp_canidate = unvec(curr_inp_canidate, (3,3))
-
-        R = func_all(curr_inp_canidate)
-        r = vec(R)
-
-        cost = r.T@r
-        print('prev cost', prev_cost)
-        print('cost', cost)
-
-        if prev_cost is None or cost < prev_cost:
-            print("hi2")
-            curr_inp = curr_inp_canidate
-            prev_cost = cost
-            lambd /= 10
-
-
-            intrinsic = curr_inp[INTRINSIC_SLICE]
-            w = curr_inp[ROTATION_ANGLE_SLICE]
-            pos = curr_inp[POSITION_SLICE]
-            K = intrinsic_vector_to_camera_matrix(intrinsic, full=True)
-            R = rotation_angles_to_matrix(w)
-            import draw_utils
-            # draw_utils.show_scene(real_points, K, R, pos, box_radius=3)
-            PP = product_matricies_to_projection_matrix(K, R, pos[...,None])
-            if callb:
-                callb(PP)
-        else:
-            lambd *= 10
-
-        if lambd > 1e15:
-            raise RuntimeError("Optimization diverging too rapidly.")
-
-
-        # prev_cost = cost
-        # print(cost)
-
-        count += 1
-    
-    intrinsic = curr_inp[INTRINSIC_SLICE]
-    w = curr_inp[ROTATION_ANGLE_SLICE]
-    pos = curr_inp[POSITION_SLICE]
-    K = intrinsic_vector_to_camera_matrix(intrinsic, full=True)
-    R = rotation_angles_to_matrix(w)
-
-    print(pos)
-
-    # import draw_utils
-    # draw_utils.show_scene(real_points, K, R, pos, box_radius=3)
-    PP = product_matricies_to_projection_matrix(K, R, pos[...,None])
-    if callb:
-        callb(PP, booll=True)
-
-    return PP
-
-    z = func_to_proj(curr_inp)
-    p1 = func_V(z)
-    p2 = func_D_inv(p1)
-    return cut_last_row(p2).T
+    return P/P[-1,-1]
 
 
 

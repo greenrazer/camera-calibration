@@ -46,6 +46,22 @@ def test_calibration(func):
     wrapper.__name__ = func.__name__
     return test(wrapper)
 
+def test_convergence(func):
+    A = np.random.rand(3,4)
+    A /= np.linalg.norm(A)
+    A /= A[-1, -1]
+    
+    X = np.random.rand(3,12)
+    X = li_utils.to_homo_coords(X)
+
+    X_inp = li_utils.to_euclid_coords(X,   entire=False).T
+    X_out = li_utils.to_euclid_coords(A@X, entire=False).T
+
+    def wrapper():
+        return func(A, X_inp, X_out)
+    wrapper.__name__ = func.__name__
+    return test(wrapper)
+
 @test_calibration
 def camera_matrix_decomposition(real_points, screen_points):
     P_before = li_utils.dlt(real_points, screen_points)
@@ -55,33 +71,6 @@ def camera_matrix_decomposition(real_points, screen_points):
     P_after /= P_after[-1, -1]
 
     assert np.allclose(P_before, P_after), "Projection matrix decomp not working"
-
-@test_calibration
-def direct_linear_transform(real_points, screen_points):
-    # If P is the best estimation of the projection matrix using the dlt
-    # If we perform the dlt again using the estimated screen points the error
-    # should be close to zero and the new estimated projection should be roughly equal
-
-    A = np.random.rand(3,4)
-    A /= np.linalg.norm(A)
-    A /= A[-1, -1]
-    
-    x = np.random.rand(3,12)
-    x = li_utils.to_homo_coords(x)
-
-    X_inp = li_utils.to_euclid_coords(x,   entire=False).T
-    X_out = li_utils.to_euclid_coords(A@x, entire=False).T
-
-    A_new = li_utils.dlt(X_inp, X_out)
-
-    assert np.allclose(A, A_new), "DLT not working"
-
-    P_before = li_utils.dlt(real_points, screen_points)
-
-    estimated_screen_points = li_utils.camera_project_points(P_before, real_points)
-    P_after = li_utils.dlt(real_points, estimated_screen_points)
-
-    return li_utils.matrix_approx_equal(P_before, P_after), "DLT not working"
 
 def normalization_helper(pts):
     dims = pts.shape[1]
@@ -166,8 +155,48 @@ def vec():
     A_new = li_utils.unvec(a, shape)
 
     assert np.allclose(A, A_new), "vec or unvec not working for 4 rank tensor"
-    
 
+@test_convergence
+def direct_linear_transform(A, real_points, screen_points):
+    # If P is the best estimation of the projection matrix using the dlt
+    # If we perform the dlt again using the estimated screen points the error
+    # should be close to zero and the new estimated projection should be roughly equal
+
+    A_new = li_utils.dlt(real_points, screen_points)
+
+    assert np.allclose(A, A_new), "DLT not working"
+
+@test_convergence
+def camera_projection_levenberg_marquardt(A, real_points, screen_points):
+    A_new = li_utils.camera_projection_levenberg_marquardt(real_points, screen_points, A)
+
+    assert np.allclose(A, A_new), "levenberg marquardt algorithm diverging from optimum"
+
+    A_adj = A + np.random.rand(*A.shape)*1e-7
+
+    A_new = li_utils.camera_projection_levenberg_marquardt(real_points, screen_points, A_adj, iters=24)
+    assert (np.abs(A - A_new) < 1e-5).all(), "levenberg marquardt does not converge to optimum from slightly different start"
+
+@test_convergence
+def numerical_camera_projection_levenberg_marquardt(A, real_points, screen_points):
+    A_new = li_utils.numerical_camera_projection_levenberg_marquardt(real_points, screen_points, A)
+
+    assert np.allclose(A, A_new), "levenberg marquardt algorithm diverging from optimum"
+
+    assemble_func = li_utils.assemble_feature_vector
+    def test_assemble_feature_vector(P):
+        a = assemble_func(P)
+        return a + np.random.rand(*a.shape)*1e-6
+    li_utils.assemble_feature_vector = test_assemble_feature_vector
+
+    A_new = li_utils.numerical_camera_projection_levenberg_marquardt(real_points, screen_points, A, iters=15)
+
+    assert (np.abs(A - A_new) < 1e-4).all(), "levenberg marquardt does not converge to optimum from slightly different start"
+
+@test_convergence
+def calibrate_camera(A, real_points, screen_points):
+    A_new = li_utils.calibrate_camera(real_points, screen_points)
+    assert (np.abs(A - A_new) < 1e-6).all(), "Calibrate Camera Not Converging"
 
 if __name__ == '__main__':
     for test in tests:
