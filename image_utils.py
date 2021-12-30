@@ -209,28 +209,50 @@ OPENCV_OBJECT_TRACKERS = {
 }
 
 class ObjectTracker:
-    def __init__(self, tracker_type='csrt', draw_debug=False):
+    def __init__(self, tracker_type='csrt', draw_debug=False, colors=[(0, 255, 0)]):
         self.trackers = cv2.legacy.MultiTracker_create()
         self.draw_debug = draw_debug
         self.tracker_type = tracker_type
+        self.colors = colors
+
+    @classmethod
+    def from_boxes(cls, img, boxes, **kwargs):
+        track = cls(**kwargs)
+        for box in boxes:
+            track.add_tracker_from_img_box(img, box)
+        return track
 
     def update(self, img):
         success, boxes = self.trackers.update(img)
         if success:
             if self.draw_debug:
-                for box in boxes:
+                for i, box in enumerate(boxes):
                     (x, y, w, h) = [int(v) for v in box]
-                    cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    color = self.colors[i % len(self.colors)]
+                    cv2.rectangle(img, (x, y), (x + w, y + h), color, 2)
         return boxes if success else []
 
-    def add_new_tracker(self, img):
-        box = show_img_select_roi_coords("Select Object To Track", img, single=True)
+    def add_new_tracker(self, img, window_name="Select Object To Track", width=600):
+        box = show_img_select_roi_coords(window_name, img, single=True, width=width)
+        self.add_tracker_from_img_box(img, box)
+        return box
+    
+    def add_tracker_from_img_box(self, img, box):
         tracker = OPENCV_OBJECT_TRACKERS[self.tracker_type]()
+        self.trackers.add(tracker, img, box)
         # tracker.save("default_csrt.xml")
         # fs = cv2.FileStorage("default_csrt.xml", cv2.FILE_STORAGE_READ)
         # fn = fs.getFirstTopLevelNode()
         # tracker.read(fn)
-        self.trackers.add(tracker, img, box)
+
+
+    def save(self, location):
+        for tracker in self.trackers:
+            tracker.write(location)
+
+def center_of_box(box):
+    x, y, w, h = box
+    return [x + w/2, y + h/2]
 
 def draw_points_on_image(im, uv_points, radius=10, colors = [[255, 255, 0]]):
     img = im
@@ -245,30 +267,3 @@ def draw_points_on_image(im, uv_points, radius=10, colors = [[255, 255, 0]]):
         img = cv2.circle(img, (x,y), radius=radius, color=colors[count % len(colors)], thickness=-1)
         count += 1
     return img
-
-# def draw_points_and_error_on_image(im, uv_points_pred, uv_points, colors = [[255, 255, 0]]):
-#     im = draw_points_on_image(im, uv_points_pred, colors)
-#     count = 0
-#     for pred, actual in zip(uv_points_pred, uv_points):
-#         print(pred, actual)
-
-#         if pred[0] < 0 or 1 < pred[0] or pred[1] < 0 or 1 < pred[1]:
-#             continue
-
-#         if actual[0] < 0 or 1 < actual[0] or actual[1] < 0 or 1 < actual[1]:
-#             continue
-        
-#         color = colors[count % len(colors)]
-#         print(color)
-
-#         x_p = int(pred[1] * im.shape[1])
-#         y_p = int(pred[0] * im.shape[0])
-
-#         x = int(actual[1] * im.shape[1])
-#         y = int(actual[0] * im.shape[0])
-
-#         print((y_p, x_p),'->' , (y, x))
-
-#         im = cv2.arrowedLine(im, [y_p, x_p], [y, x], color=color,thickness=6)
-#         count += 1
-#     return im
