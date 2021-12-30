@@ -521,12 +521,6 @@ def disassemble_feature_vector(feature_vec):
 
     return P
 
-def make_projection_function(X, x):
-    def wrapper(inp):
-        P = disassemble_feature_vector(inp)
-        return camera_project_points_operation(P, X) - x
-    return wrapper
-
 def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, P_start, iters=10, callback = None):
     X = to_homo_coords(real_points.T)
     x = to_homo_coords(screen_points.T)
@@ -534,7 +528,10 @@ def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, 
     min_cost = camera_projection_compute_cost(P_start, X, x)
 
     curr_inp = assemble_feature_vector(P_start)
-    func = make_projection_function(X, x)
+
+    def func(inp):
+        P = disassemble_feature_vector(inp)
+        return camera_project_points_operation(P, X) - x
 
     lambd = 1e-3
     descent_rate = 1e-2
@@ -570,8 +567,8 @@ def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, 
         else:
             lambd *= 10
 
-        if lambd > 1e15:
-            raise RuntimeError("Optimization diverging too rapidly.")
+        if lambd > 1e14:
+            raise RuntimeError("Optimization diverging too rapidly. Try lowering the iterations.")
 
     P = disassemble_feature_vector(curr_inp)
 
