@@ -188,8 +188,11 @@ def default():
         def display(p):
             internal, rotation, position = li_utils.get_projection_product_matricies(p)
 
-            print("internal")
-            print(internal)
+            # print("internal")
+            # print(internal)
+
+            # print('Rotation')
+            # print(rotation)
 
             # print("KR")
             # print(internal @ rotation)
@@ -213,8 +216,8 @@ def default():
             new_points = li_utils.camera_project_points(P, real_points_m)
 
             drawn = image_utils.draw_points_on_image(imag, new_points, radius=20, colors=colors)
-            # if booll:
-            #     image_utils.show_image("howdy", drawn)
+            if booll:
+                image_utils.show_image("howdy", drawn)
             print(new_points)
             display(P)
 

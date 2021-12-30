@@ -14,21 +14,18 @@ def show_scene(points, inter, rot, pos, scale=1, box_radius=2):
     create_3d_scene(ax, points, pos, rot, inter, scale=scale, box_radius=box_radius)
     plt.show()
 
-def draw_rotation_matrix(ax, rot, at=[0,0,0], scale=1):
+def draw_rotation_matrix(ax, rot, at=[0,0,0], scale=1, flip_forward=False):
     # negitive y because the image is upsidedown in the computer
     # like y=0 is the top y >> 0 is the bottom
     # x works as expected, however since flipping y changes left and right
     r = rot.T
-    draw_vec(ax, at, r[:,0]*scale, [1,0,0]) # red y up - x
+    draw_vec(ax, at, (-1 if flip_forward else 1)*r[:,0]*scale, [1,0,0]) # red y up - x
     draw_vec(ax, at, r[:,1]*scale, [0,1,0]) # green x right - y
-    draw_vec(ax, at, r[:,2]*scale, [0,0,1]) # blue z forward - z
+    draw_vec(ax, at, (-1 if flip_forward else 1)*r[:,2]*scale, [0,0,1]) # blue z forward - z
 
 def create_3d_scene(ax, points, pos, rot, inter, scale=1, box_radius=2):
 
-    # draw_vec(ax, pos, rot[0]*scale, [1,0,0])
-    # draw_vec(ax, pos, rot[1]*scale, [0,1,0])
-    # draw_vec(ax, pos, rot[2]*scale, [0,0,1])
-    draw_rotation_matrix(ax, rot, pos)
+    draw_rotation_matrix(ax, rot, pos, flip_forward = inter[1,1] < 0)
     draw_point(ax, pos, [0,0,0])
 
     colors = [

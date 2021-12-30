@@ -536,7 +536,7 @@ def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, 
     curr_inp = assemble_feature_vector(P_start)
     func = make_projection_function(X, x)
 
-    lambd = 1e-4
+    lambd = 1e-3
     descent_rate = 1e-2
 
     for _ in range(iters):
