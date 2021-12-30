@@ -182,8 +182,8 @@ def get_projection_product_matricies(P):
 
 def fix_rotation_matrix(K, R):
     if K[1,1] < 0:
-        return rotate3d_around_y_180 @ R
-    return R
+        return K @ rotate3d_around_y_180, rotate3d_around_y_180 @ R
+    return K, R
 
 def product_matricies_to_projection_matrix(K, R, p):
     H = K@R

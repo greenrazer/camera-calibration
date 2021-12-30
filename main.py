@@ -139,19 +139,19 @@ def try4():
         def display(p):
             internal, rotation, position = li_utils.get_projection_product_matricies(p)
 
-            rotation = li_utils.fix_rotation_matrix(internal, rotation)
+            internal, rotation = li_utils.fix_rotation_matrix(internal, rotation)
             plt = draw_utils.show_scene(real_points_m, internal, rotation, position)
         
-        def draw_on_pic(P, booll=False):
+        def draw_on_pic(P, show_projected_points=False):
             new_points = li_utils.camera_project_points(P, real_points_m)
 
             drawn = image_utils.draw_points_on_image(imag, new_points, radius=20, colors=colors)
-            if booll:
+            if show_projected_points:
                 image_utils.show_image("howdy", drawn)
             display(P)
 
         P = li_utils.calibrate_camera(real_points_m, points)
-        draw_on_pic(P, booll=True)
+        draw_on_pic(P, show_projected_points=True)
 
 if __name__ == '__main__':
     try4()
