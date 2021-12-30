@@ -9,6 +9,18 @@ rotate3d_around_z_180 = np.array([
     [0, 0, 1]
 ])
 
+rotate3d_around_y_180 = np.array([
+    [-1, 0, 0],
+    [0, 1, 0],
+    [0, 0, -1]
+])
+
+rotate3d_around_x_180 = np.array([
+    [1, 0, 0],
+    [0, -1, 0],
+    [0, 0, -1]
+])
+
 def construct_normalization_matrix(dim, avg, scale):
     trans_mat = np.zeros((dim, dim))
     trans_mat[0:dim-1, 0:dim-1] = np.identity(dim-1)
@@ -123,6 +135,16 @@ def dlt(real_points, screen_points, normalize_inp=True):
 
     return P/P[-1,-1]
 
+def unique_qr(M):
+    R, T = np.linalg.qr(M)
+    # This qr decomp doesn't enforce that the diagonals of the upper triangle matrix are positive 
+    # so I have to do it myself
+    # one issue with this is that the rotation matrix may have determinant -1 which means it's mirrored
+    signs = 2 * (np.diag(T) >= 0) - 1
+    R = R * signs[np.newaxis, :]
+    T = T * signs[:, np.newaxis]
+    return R, T
+
 def get_projection_product_matricies(P):
     # now we have P = [H|h] H = KR, h = -KR<camera pos>
     # <camera pos> = - <H inverse>*h
@@ -131,6 +153,7 @@ def get_projection_product_matricies(P):
     # these are the not the normal constants? so we rotate the K matrix by 180 degrees around the z axis
     # and we normalize K by dividing it by K_(3_3)
     # we also rotate R by 180 around the z axis
+
     H = P[:, :3]
     # transformed position
     h = P[:, -1]
@@ -144,18 +167,24 @@ def get_projection_product_matricies(P):
     R = np.transpose(R_T)
     K = np.linalg.inv(K_inv)
 
-    # We normalize K because it means we have to worry about fewer terms
-    # after converting from homogeneous coordinates to euclidean coordindates
-    # we get the same result
-    K_norm = K/K[-1,-1]
+    # # We normalize K because it means we have to worry about fewer terms
+    # # after converting from homogeneous coordinates to euclidean coordindates
+    # # we get the same result
+    K = K / K[-1,-1]
 
-    # Cause cameras have the "forward" direction facing away from the scene.
-    # Our decomposition still holds because K * rotation_180 * rotation_180 * R = K*R
-    # since rotation_180 * rotation_180 = I
-    R = rotate3d_around_z_180 @ R
-    K = K_norm @ rotate3d_around_z_180
+    # if the camera constant is positive we want to rotate around the Z axis
+    # so that the projection plane is on the right spot.
+    if K[0,0] >= 0:
+        R = rotate3d_around_z_180 @ R
+        K = K @ rotate3d_around_z_180
 
     return K, R, camera_pos[..., None]
+
+def product_matricies_to_projection_matrix(K, R, p):
+    H = K@R
+    camera_matrix = np.hstack((I_3, -p))
+    P_new = H@camera_matrix
+    return P_new
 
 def cut_last_row(x):
     return x[0:-1, :]
@@ -347,43 +376,36 @@ def w_times_to_w(w_times):
         w_times[1,0]
     ])
 
-def intrinsic_camera_matrix_to_vector(K, full=True):
-    # intrinsic vector in my program is defined as
-    # k = [f_x, s, x_0, f_y, y_0]
-    # we will assume f_x and f_y are the same, and s is 0
-    # so the final output will be [f, x_0, y_0]
-    if full:
-        return np.array([K[0,0], K[0,1], K[1,1], K[0,2], K[1,2]])
-    else:
-        return np.array([K[0,0], K[0,2], K[1,2]])
+def intrinsic_camera_matrix_to_vector(K):
+    # the intrinsic camera matrix in my program is defined as
+    # [c, cs,     x_0]
+    # [0, c(1+m), y_0]
+    # [0, 0,    , 1  ]
+    # the intrinsic vector should be [c, s, x_0, m, y_0]
+    c = K[0,0]
+    s = K[0,1]/c
+    x_0 = K[0,2]
+    m = K[1,1]/c - 1
+    y_0 = K[1,2]
+    return np.array([c, s, x_0, m, y_0])
 
-def intrinsic_vector_to_camera_matrix(k, full=True):
-    # normally
-    # f = k[0] = f_x -> (0,0)
-    # s = 0 -> (0,1)
-    # k[1] = x_0 -> (0,2)
-    # f = k[0] = f_y -> (1,1)
-    # k[2] = y_0 -> (1,2)
-    # 1 -> (2,2)
-    # 0 everywhere else
-    if full:
-        return np.array([
-            [k[0], k[1], k[3]],
-            [0,    k[2], k[4]],
-            [0,    0,    1   ]
-        ])
-    else:
-        return np.array([
-            [k[0], 0,    k[1]],
-            [0,    k[0], k[2]],
-            [0,    0,    1],
-        ])
-
+def intrinsic_vector_to_camera_matrix(k):
+    # given our intrinsic vector [c, s, x_0, m, y_0]
+    # the intrinsic camera matrix in my program is defined as
+    # [c, cs,     x_0]
+    # [0, c(1+m), y_0]
+    # [0, 0,    , 1  ]
+    c, s, x_0, m, y_0 = k
+    return np.array([
+        [c, c*s,     x_0],
+        [0, c*(1+m), y_0],
+        [0, 0,       1  ],
+    ])
 
 def rotation_angles_to_matrix(w):
     # Rotation matrix R
     # convert w to w_times then
-    # R = exp(w_times) ~ first 3 terms of taylor expansion of e^{w_times}
+    # R = exp(w_times) ~  taylor expansion of e^{w_times}
     #                   = I + first_term*w_times + second_term*w_times^2
     # first_term = sin(|w|)/|w|
     # second_term = (1-cos(|w|))/|w|^2
@@ -400,13 +422,19 @@ def rotation_matrix_to_angles(R):
     # rotation angles w
     # R^-1 = R^T
     # w_times = log(R) = exp^-1(R) = inverse of above
+
+    # if the rotation matrix is the identity we know the w value is 0,0,0
     if np.allclose(R, I_3):
         return np.array([0,0,0])
 
     t = np.trace(R)
 
+    # If the trace of R is close to -1 theta will be close to infinity
+    # which will mess with our calculations
+    # therefore when theta is infinity we will return the last column of the
+    # rotation matrix with 1 added to the last element
     if np.allclose(t, -1):
-        o_p = 1+R[3,3]
+        o_p = 1+R[2,2]
         v = 1/np.sqrt(2*o_p)
         return v*np.array([R[0,2], R[1,2], o_p])
 
@@ -471,12 +499,6 @@ def matrix_approx_equal(A, B, epsilon=1e-7, debug=False):
         print(bool_mat * 1)
     return not bool_mat.any()
 
-def product_matricies_to_projection_matrix(K, R, p):
-    H = K@R
-    camera_matrix = np.hstack((I_3, -p))
-    P_new = H@camera_matrix
-    return P_new
-
 def assemble_feature_vector(P):
     internal, rotation, position = get_projection_product_matricies(P)
 
@@ -515,6 +537,7 @@ def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, 
     func = make_projection_function(X, x)
 
     lambd = 1e-4
+    descent_rate = 1e-2
 
     for _ in range(iters):
         J = numerical_jacobian(func, curr_inp)
@@ -529,7 +552,7 @@ def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, 
 
         update = (H_inv + H_grad) @ g
 
-        curr_inp_canidate = curr_inp - update
+        curr_inp_canidate = curr_inp - descent_rate*update
 
         R = func(curr_inp_canidate)
         r = vec(R)
@@ -539,6 +562,7 @@ def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, 
             curr_inp = curr_inp_canidate
             min_cost = cost
             lambd /= 10
+
 
             if callback:
                 P = disassemble_feature_vector(curr_inp)
@@ -556,13 +580,13 @@ def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, 
 
     return P/P[-1,-1]
 
-def calibrate_camera(real_points, screen_points):
+def calibrate_camera(real_points, screen_points, callback = None):
     real, avg_real, scale_real = normalize_points(real_points)
     screen, avg_screen, scale_screen = normalize_points(screen_points)
 
     P = dlt(real, screen)
     P = camera_projection_levenberg_marquardt(real, screen, P)
-    P = numerical_camera_projection_levenberg_marquardt(real, screen, P)
+    P = numerical_camera_projection_levenberg_marquardt(real, screen, P, callback=callback)
 
     real_norm_matrix  = construct_normalization_matrix(4, avg_real, scale_real)
     screen_norm_matrix = construct_normalization_matrix(3, avg_screen, scale_screen)

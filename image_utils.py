@@ -60,6 +60,7 @@ def show_img_select_roi_coords(window_name, img, single=False, width=300):
 
 def show_image_select_points(window_name, img, width=300, colors=[[255,0,0]], uv=False):
     scaled_im, scale = resize_keep_aspect_ratio(img, width)
+    print(colors[0])
 
     def click_event(event, x, y, flags, params):
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -74,6 +75,7 @@ def show_image_select_points(window_name, img, width=300, colors=[[255,0,0]], uv
             cv2.circle(params['img'], (x,y), 5, color, -1)
             cv2.imshow(window_name, params['img'])
             params['count']+=1
+            print(params['colors'][(color_index+1) % len(params['colors'])])
 
     params = {
         'img':scaled_im,
@@ -92,9 +94,9 @@ def show_image_select_points(window_name, img, width=300, colors=[[255,0,0]], uv
 
     return params['points']
 
-def draw_text_on_image(img, string):
+def draw_text_on_image(img, string, location=(0,0)):
     font = cv2.FONT_HERSHEY_SIMPLEX
-    cv2.putText(img, string, (x,y), font,
+    cv2.putText(img, string, location, font,
         1, (255, 0, 0), 2)
 
 def white_balance(img, method='mean', percentile_value=.99, patch=None):
@@ -230,17 +232,17 @@ class ObjectTracker:
         # tracker.read(fn)
         self.trackers.add(tracker, img, box)
 
-def draw_points_on_image(im, uv_points, colors = [[255, 255, 0]]):
+def draw_points_on_image(im, uv_points, radius=10, colors = [[255, 255, 0]]):
     img = im
     count = 0
     for point in uv_points:
         if point[0] < 0 or 1 < point[0] or point[1] < 0 or 1 < point[1]:
             continue
 
-        x = int(point[1] * im.shape[1])
-        y = int(point[0] * im.shape[0])
+        y = int(point[0] * img.shape[0])
+        x = int(point[1] * img.shape[1])
 
-        img = cv2.circle(img, (x,y), radius=10, color=colors[count % len(colors)], thickness=-1)
+        img = cv2.circle(img, (x,y), radius=radius, color=colors[count % len(colors)], thickness=-1)
         count += 1
     return img
 
