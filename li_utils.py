@@ -577,13 +577,13 @@ def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, 
 
     return P/P[-1,-1]
 
-def calibrate_camera(real_points, screen_points, callback = None):
+def calibrate_camera(real_points, screen_points):
     real, avg_real, scale_real = normalize_points(real_points)
     screen, avg_screen, scale_screen = normalize_points(screen_points)
 
     P = dlt(real, screen)
     P = camera_projection_levenberg_marquardt(real, screen, P)
-    P = numerical_camera_projection_levenberg_marquardt(real, screen, P, callback=callback)
+    P = numerical_camera_projection_levenberg_marquardt(real, screen, P)
 
     real_norm_matrix  = construct_normalization_matrix(4, avg_real, scale_real)
     screen_norm_matrix = construct_normalization_matrix(3, avg_screen, scale_screen)
