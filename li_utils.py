@@ -180,6 +180,11 @@ def get_projection_product_matricies(P):
 
     return K, R, camera_pos[..., None]
 
+def fix_rotation_matrix(K, R):
+    if K[1,1] < 0:
+        return rotate3d_around_y_180 @ R
+    return R
+
 def product_matricies_to_projection_matrix(K, R, p):
     H = K@R
     camera_matrix = np.hstack((I_3, -p))
@@ -591,13 +596,3 @@ def calibrate_camera(real_points, screen_points):
     P = screen_norm_matrix_inv@P@real_norm_matrix
 
     return P/P[-1,-1]
-
-
-
-
-
-
-
-
-
-

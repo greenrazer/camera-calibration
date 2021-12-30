@@ -88,7 +88,7 @@ def try3():
 
     cv2.destroyAllWindows()
 
-def default():
+def try4():
     DIST = .33
     # mirrored x = -x y = y z = z
     real_points_m = np.array([
@@ -138,6 +138,8 @@ def default():
 
         def display(p):
             internal, rotation, position = li_utils.get_projection_product_matricies(p)
+
+            rotation = li_utils.fix_rotation_matrix(internal, rotation)
             plt = draw_utils.show_scene(real_points_m, internal, rotation, position)
         
         def draw_on_pic(P, booll=False):
@@ -152,7 +154,7 @@ def default():
         draw_on_pic(P, booll=True)
 
 if __name__ == '__main__':
-    default()
+    try4()
 
 
 
