@@ -544,22 +544,23 @@ def disassemble_feature_vector(feature_vec, include_K=True):
 
     return K, R, p
 
-def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, P_start, iters=10, callback = None, K=None):
+def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, P_start, iters=10, callback = None, K_given=None):
     X, x = point_lists_to_homogeneous_coordinates(real_points, screen_points)
 
-    include_K = K is None
+    use_generated_K = K_given is None
 
+    # if K is given, we return that K every time
+    # otherwise we optimise internal parameters as well
     def disassemble_with_K(inp):
-        tempK, R, p = disassemble_feature_vector(inp, include_K=include_K)
-        tempK = tempK if include_K else K
+        K, R, p = disassemble_feature_vector(inp, include_K=use_generated_K)
+        K = K if use_generated_K else K_given
 
-        P = product_matricies_to_projection_matrix(tempK, R, p)
+        P = product_matricies_to_projection_matrix(K, R, p)
         return P
 
     def cost_func(inp):
         P = disassemble_with_K(inp)
-        cowast = camera_projection_compute_cost(P, X, x)
-        return cowast
+        return camera_projection_compute_cost(P, X, x)
     
     def func(inp):
         P = disassemble_with_K(inp)
@@ -570,34 +571,43 @@ def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, 
         R = func(inp)
         return J, vec(R)
 
-    def callba(inp):
-        tempK, R, p = disassemble_feature_vector(inp, include_K=include_K)
-        tempK = tempK if include_K else K
-        P = product_matricies_to_projection_matrix(tempK, R, p)
-
-    inp_start = assemble_feature_vector(P_start, include_K=include_K)
-    inp = generic_levenberg_marquardt(inp_start, cost_func, jacobian_residual_func, learning_rate=1e-1, callback=callba)
+    inp_start = assemble_feature_vector(P_start, include_K=use_generated_K)
+    inp = generic_levenberg_marquardt(inp_start, cost_func, jacobian_residual_func, learning_rate=1e-1)
     P = disassemble_with_K(inp)
 
     return P/P[-1,-1]
 
-def calibrate_camera(real_points, screen_points, K=None, start_raw=None):
+def calibrate_camera_helper(real_points, screen_points, func):
     real, avg_real, scale_real = normalize_points(real_points)
     screen, avg_screen, scale_screen = normalize_points(screen_points)
+
+    P = func(real, screen)
 
     real_norm_matrix  = construct_normalization_matrix(4, avg_real, scale_real)
     screen_norm_matrix = construct_normalization_matrix(3, avg_screen, scale_screen)
     screen_norm_matrix_inv = np.linalg.inv(screen_norm_matrix)
+    P_unnormalized = screen_norm_matrix_inv@P@real_norm_matrix
+    P_unnormalized /= P_unnormalized[-1,-1]
 
-    if K is not None:
-        P = start_raw
-    else:
+    return P_unnormalized, P
+
+def calibrate_camera(real_points, screen_points):
+
+    def func(real, screen):
         P = dlt(real, screen)
         P = camera_projection_levenberg_marquardt(real, screen, P)
+        P = numerical_camera_projection_levenberg_marquardt(real, screen, P)
+        return P
 
-    P = numerical_camera_projection_levenberg_marquardt(real, screen, P, K=K)
+    P_unnormalized, P = calibrate_camera_helper(real_points, screen_points, func)
+    return P_unnormalized, P
 
-    P_raw = P/P[-1,-1]
-    P = screen_norm_matrix_inv@P@real_norm_matrix
+def calibrate_camera_const_internals(real_points, screen_points, K, P_estimate):
 
-    return P/P[-1,-1], P_raw
+    def func(real, screen):
+        P = numerical_camera_projection_levenberg_marquardt(real, screen, P_estimate, K_given=K)
+        return P
+
+    P_unnormalized, P = calibrate_camera_helper(real_points, screen_points, func)
+    return P_unnormalized, P
+

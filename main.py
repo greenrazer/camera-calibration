@@ -211,11 +211,11 @@ def try5():
     np.set_printoptions(suppress=True)
 
     centers = np.array([image_utils.center_of_box(box) for box in boxes])
-    P, P_raw = li_utils.calibrate_camera(real_points_m, centers)
+    P, P_norm = li_utils.calibrate_camera(real_points_m, centers)
     internal, rotation, position = li_utils.get_projection_product_matricies(P)
-    # plt = draw_utils.show_scene(real_points_m, internal, rotation, position, colors=np.array(colors)/255)
+    plt = draw_utils.show_scene(real_points_m, internal, rotation, position, colors=np.array(colors)/255)
     line = position
-    internal, rotation, position = li_utils.get_projection_product_matricies(P_raw)
+    internal, _, _ = li_utils.get_projection_product_matricies(P_norm)
 
 
     while True:
@@ -229,10 +229,8 @@ def try5():
 
             centers = np.array([image_utils.center_of_box(box) for box in boxes])
 
-            P, P_raw = li_utils.calibrate_camera(real_points_m, centers, K=internal, start_raw=P_raw)
+            P, P_norm = li_utils.calibrate_camera_const_internals(real_points_m, centers, internal, P_norm)
             _, rotation, position = li_utils.get_projection_product_matricies(P)
-
-            print(position)
 
             line = np.hstack([line, position])
 
