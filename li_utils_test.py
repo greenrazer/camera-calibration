@@ -244,7 +244,7 @@ def numerical_camera_projection_levenberg_marquardt(A, real_points, screen_point
     assert np.allclose(A, A_new), "levenberg marquardt algorithm diverging from optimum"
 
     assemble_func = li_utils.assemble_feature_vector
-    def test_assemble_feature_vector(P):
+    def test_assemble_feature_vector(P, include_K=True):
         a = assemble_func(P)
         return a + np.random.rand(*a.shape)*1e-6
     li_utils.assemble_feature_vector = test_assemble_feature_vector
@@ -255,7 +255,7 @@ def numerical_camera_projection_levenberg_marquardt(A, real_points, screen_point
 
 @test_convergence
 def calibrate_camera(A, real_points, screen_points):
-    A_new = li_utils.calibrate_camera(real_points, screen_points)
+    A_new, _ = li_utils.calibrate_camera(real_points, screen_points)
     assert (np.abs(A - A_new) < 1e-4).all(), "Calibrate Camera Not Converging"
 
 if __name__ == '__main__':

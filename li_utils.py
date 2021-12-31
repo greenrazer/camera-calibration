@@ -258,19 +258,19 @@ def generate_permutation_matrix(size, swaps):
         K[:,[s[1],s[0]]] = K[:,[s[0],s[1]]]
     return K
 
-def generic_levenberg_marquardt(start, cost_func, jacobian_residual_func, iters=10, callback=None):
+def generic_levenberg_marquardt(start, cost_func, jacobian_residual_func, iters=10, callback=None, learning_rate=1):
     # where lambda=0 does Gauss Newton and lambda >> 0 does gradient descent
     lambd = 1e-4
     curr = start
     min_cost = cost_func(start)
+
     for i in range(iters):
         J, r = jacobian_residual_func(curr)
-
         # The second derivative matrix is called the Hessian, it is linearly approximated by
         # H = J^T * J
         H = J.T @ J
         # The gauss newton method update term is H^-1 @ J^T @ r
-        H_inv = np.linalg.inv(H)
+        H_inv = np.linalg.pinv(H)
         # The gradient descent update term is diag(H) @ J^T @ r
         # we can switch between the 2 using the lambda term
         H_grad = lambd*np.diag(H)
@@ -281,7 +281,12 @@ def generic_levenberg_marquardt(start, cost_func, jacobian_residual_func, iters=
         # (H^-1 + lambda*diag(H)) @ J^T @ r
         update = (H_inv + H_grad) @ g
 
-        canidate = curr - update
+        # The learning rate is a number between 0 and 1 to ensure our steps
+        # stay small as to not overshoot our goal, or end up somewhere we don't
+        # want to be.
+        # This is usually only important if our jacobian isn't very 
+        # accurate (e.g. numerically estimated
+        canidate = curr - learning_rate*update
 
         cost = cost_func(canidate)
 
@@ -294,8 +299,10 @@ def generic_levenberg_marquardt(start, cost_func, jacobian_residual_func, iters=
         else:
             lambd *= 10
 
-        if lambd > 1e20:
-            raise RuntimeError("Optimization diverging too rapidly. Try lowering the iterations.")
+        # If lambd ever gets this big, we've most likely already found the optimum
+        # If not, we aren't likely to improve anymore before weird linalg errors start happening
+        if lambd > 1e14:
+            break
   
     if callback is not None:
         callback(curr)
@@ -512,37 +519,50 @@ def matrix_approx_equal(A, B, epsilon=1e-7, debug=False):
         print(bool_mat * 1)
     return not bool_mat.any()
 
-def assemble_feature_vector(P):
-    internal, rotation, position = get_projection_product_matricies(P)
-
-    intrinsic = intrinsic_camera_matrix_to_vector(internal)
-    w = rotation_matrix_to_angles(rotation)
-    feature_vec = np.concatenate([intrinsic, w, vec(position)])
-
+def assemble_feature_vector(P, include_K=True):
+    K, R, p = get_projection_product_matricies(P)
+    w = rotation_matrix_to_angles(R)
+    p_T = vec(p)
+    if include_K:
+        intrinsic = intrinsic_camera_matrix_to_vector(K)
+        feature_vec = np.concatenate([p_T, w, intrinsic])
+    else:
+        feature_vec = np.concatenate([p_T, w])
     return feature_vec
 
-INTRINSIC_SLICE = slice(0,5)
-ROTATION_ANGLE_SLICE = slice(5,8)
-POSITION_SLICE = slice(8,11)
+POSITION_SLICE = slice(0,3)
+ROTATION_ANGLE_SLICE = slice(3,6)
+INTRINSIC_SLICE= slice(6,11)
 
-def disassemble_feature_vector(feature_vec):
-    K = intrinsic_vector_to_camera_matrix(feature_vec[INTRINSIC_SLICE])
+def disassemble_feature_vector(feature_vec, include_K=True):
+    if include_K:
+        K = intrinsic_vector_to_camera_matrix(feature_vec[INTRINSIC_SLICE])
+    else:
+        K = None
     R = rotation_angles_to_matrix(feature_vec[ROTATION_ANGLE_SLICE])
     p = feature_vec[POSITION_SLICE][...,None]
 
-    P = product_matricies_to_projection_matrix(K, R, p)
+    return K, R, p
 
-    return P
-
-def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, P_start, iters=10, callback = None):
+def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, P_start, iters=10, callback = None, K=None):
     X, x = point_lists_to_homogeneous_coordinates(real_points, screen_points)
 
+    include_K = K is None
+
+    def disassemble_with_K(inp):
+        tempK, R, p = disassemble_feature_vector(inp, include_K=include_K)
+        tempK = tempK if include_K else K
+
+        P = product_matricies_to_projection_matrix(tempK, R, p)
+        return P
+
     def cost_func(inp):
-        P = disassemble_feature_vector(inp)
-        return camera_projection_compute_cost(P, X, x)
+        P = disassemble_with_K(inp)
+        cowast = camera_projection_compute_cost(P, X, x)
+        return cowast
     
     def func(inp):
-        P = disassemble_feature_vector(inp)
+        P = disassemble_with_K(inp)
         return camera_project_points_operation(P, X) - x
 
     def jacobian_residual_func(inp):
@@ -550,23 +570,34 @@ def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, 
         R = func(inp)
         return J, vec(R)
 
-    inp_start = assemble_feature_vector(P_start)
-    inp = generic_levenberg_marquardt(inp_start, cost_func, jacobian_residual_func)
-    P = disassemble_feature_vector(inp)
+    def callba(inp):
+        tempK, R, p = disassemble_feature_vector(inp, include_K=include_K)
+        tempK = tempK if include_K else K
+        P = product_matricies_to_projection_matrix(tempK, R, p)
+
+    inp_start = assemble_feature_vector(P_start, include_K=include_K)
+    inp = generic_levenberg_marquardt(inp_start, cost_func, jacobian_residual_func, learning_rate=1e-1, callback=callba)
+    P = disassemble_with_K(inp)
 
     return P/P[-1,-1]
 
-def calibrate_camera(real_points, screen_points):
+def calibrate_camera(real_points, screen_points, K=None, start_raw=None):
     real, avg_real, scale_real = normalize_points(real_points)
     screen, avg_screen, scale_screen = normalize_points(screen_points)
-
-    P = dlt(real, screen)
-    P = camera_projection_levenberg_marquardt(real, screen, P)
-    P = numerical_camera_projection_levenberg_marquardt(real, screen, P)
 
     real_norm_matrix  = construct_normalization_matrix(4, avg_real, scale_real)
     screen_norm_matrix = construct_normalization_matrix(3, avg_screen, scale_screen)
     screen_norm_matrix_inv = np.linalg.inv(screen_norm_matrix)
+
+    if K is not None:
+        P = start_raw
+    else:
+        P = dlt(real, screen)
+        P = camera_projection_levenberg_marquardt(real, screen, P)
+
+    P = numerical_camera_projection_levenberg_marquardt(real, screen, P, K=K)
+
+    P_raw = P/P[-1,-1]
     P = screen_norm_matrix_inv@P@real_norm_matrix
 
-    return P/P[-1,-1]
+    return P/P[-1,-1], P_raw
