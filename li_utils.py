@@ -217,12 +217,16 @@ def unvec(M, shape=(3,4)):
 def dyadic_dot_product(A, B):
     return vec(A).T @ vec(B)
 
+def point_lists_to_homogeneous_coordinates(real_points, screen_points):
+    X = to_homo_coords(real_points.T)
+    x = to_homo_coords(screen_points.T)
+    return X, x
+
 def linear_gauss_newton_method(real_points, screen_points, P_start, callback = None):
     # https://math.stackexchange.com/questions/4006567/how-jacobian-is-defined-for-the-function-of-a-matrix
     # https://math.stackexchange.com/questions/4309366/trouble-understanding-the-gauss-newton-method-to-update-a-matrix
 
-    X = to_homo_coords(real_points.T)
-    x = to_homo_coords(screen_points.T)
+    X, x = point_lists_to_homogeneous_coordinates(real_points, screen_points)
 
     P_curr = P_start
     I_n = np.identity(x.shape[0])
@@ -253,6 +257,50 @@ def generate_permutation_matrix(size, swaps):
     for s in swaps:
         K[:,[s[1],s[0]]] = K[:,[s[0],s[1]]]
     return K
+
+def generic_levenberg_marquardt(start, cost_func, jacobian_residual_func, iters=10, callback=None):
+    # where lambda=0 does Gauss Newton and lambda >> 0 does gradient descent
+    lambd = 1e-4
+    curr = start
+    min_cost = cost_func(start)
+    for i in range(iters):
+        J, r = jacobian_residual_func(curr)
+
+        # The second derivative matrix is called the Hessian, it is linearly approximated by
+        # H = J^T * J
+        H = J.T @ J
+        # The gauss newton method update term is H^-1 @ J^T @ r
+        H_inv = np.linalg.inv(H)
+        # The gradient descent update term is diag(H) @ J^T @ r
+        # we can switch between the 2 using the lambda term
+        H_grad = lambd*np.diag(H)
+
+        g = J.T @ r
+
+        # so the final update term of the Levenberg Marquardt algorithm is
+        # (H^-1 + lambda*diag(H)) @ J^T @ r
+        update = (H_inv + H_grad) @ g
+
+        canidate = curr - update
+
+        cost = cost_func(canidate)
+
+        if cost < min_cost:
+            curr = canidate
+            min_cost = cost
+            lambd /=10
+            if callback is not None:
+                callback(curr)
+        else:
+            lambd *= 10
+
+        if lambd > 1e20:
+            raise RuntimeError("Optimization diverging too rapidly. Try lowering the iterations.")
+  
+    if callback is not None:
+        callback(curr)
+
+    return curr
 
 swaps = [[2,8], [5,9], [8,10]]
 swap_matrix = generate_permutation_matrix(12, swaps)
@@ -296,30 +344,6 @@ def camera_projection_levenberg_marquardt_jacobian_and_residual(P_curr, X, x):
     R = U - x
     return J, R
 
-def camera_projection_levenberg_marquardt_update(P_curr, X, x, lambd = 0):
-    # The second derivative matrix is called the Hessian, it is linearly approximated by
-    # H = J^T * J
-    # The gauss newton method update term is H^-1 @ J^T @ r
-    # The gradient descent update term is diag(H) @ J^T @ r
-    # we can switch between the 2 using the lambda term
-    # so the final update term of the Levenberg Marquardt algorithm is
-    # (H^-1 + lambda*diag(H)) @ J^T @ r
-    # where lambda=0 does Gauss Newton and lambda >> 0 does gradient descent
-
-    J, R = camera_projection_levenberg_marquardt_jacobian_and_residual(P_curr,X, x)
-
-    H = J.T @ J
-    H_inv = np.linalg.inv(H)
-    H_grad = lambd*np.diag(H)
-
-    r = vec(R)
-
-    g = J.T @ r
-
-    update = (H_inv + H_grad) @ g
-
-    return update
-
 def camera_project_points_operation(P, X):
     V = P @ X
     D = np.diag(V.T @ e_3)
@@ -333,39 +357,23 @@ def camera_projection_compute_cost(P, X, x):
     return r.T @ r
 
 def camera_projection_levenberg_marquardt(real_points, screen_points, P_start, iters= 10, callback = None):
-    X = to_homo_coords(real_points.T)
-    x = to_homo_coords(screen_points.T)
+    X, x = point_lists_to_homogeneous_coordinates(real_points, screen_points)
 
-    lambd = 1e-4
+    def cost_func(p):
+        P = unvec(p)
+        return camera_projection_compute_cost(P, X, x)
+    
+    def jacobian_residual_func(p):
+        P = unvec(p)
+        J, R = camera_projection_levenberg_marquardt_jacobian_and_residual(P, X, x)
+        return J, vec(R)
 
-    P_curr = P_start
+    p_start = vec(P_start)
+    p = generic_levenberg_marquardt(p_start, cost_func, jacobian_residual_func)
 
-    min_cost = camera_projection_compute_cost(P_curr, X, x)
-    for i in range(iters):
-        update = camera_projection_levenberg_marquardt_update(P_curr, X, x, lambd)
+    P = unvec(p)
 
-        p_canidate = vec(P_curr)
-        p_canidate = p_canidate - update
-        P_canidate = unvec(p_canidate)
-
-        cost = camera_projection_compute_cost(P_canidate, X, x)
-
-        if cost < min_cost:
-            P_curr = P_canidate
-            min_cost = cost
-            lambd /=10
-            if callback:
-                callback(P_curr)
-        else:
-            lambd *= 10
-
-        if lambd > 1e20:
-            raise RuntimeError("Optimization diverging too rapidly. Try lowering the iterations.")
-  
-    if callback:
-        callback(P_curr)
-
-    return P_curr/P_curr[-1,-1]
+    return P/P[-1,-1]
 
 def w_to_w_times(w):
     return np.array([
@@ -527,58 +535,24 @@ def disassemble_feature_vector(feature_vec):
     return P
 
 def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, P_start, iters=10, callback = None):
-    X = to_homo_coords(real_points.T)
-    x = to_homo_coords(screen_points.T)
+    X, x = point_lists_to_homogeneous_coordinates(real_points, screen_points)
 
-    min_cost = camera_projection_compute_cost(P_start, X, x)
-
-    curr_inp = assemble_feature_vector(P_start)
-
+    def cost_func(inp):
+        P = disassemble_feature_vector(inp)
+        return camera_projection_compute_cost(P, X, x)
+    
     def func(inp):
         P = disassemble_feature_vector(inp)
         return camera_project_points_operation(P, X) - x
 
-    lambd = 1e-3
-    descent_rate = 1e-2
+    def jacobian_residual_func(inp):
+        J = numerical_jacobian(func, inp)
+        R = func(inp)
+        return J, vec(R)
 
-    for _ in range(iters):
-        J = numerical_jacobian(func, curr_inp)
-
-        H = J.T @ J
-        H_inv = np.linalg.pinv(H)
-        
-        H_grad = lambd*np.diag(H)
-        R = func(curr_inp)
-        r = vec(R)
-        g = J.T @ r
-
-        update = (H_inv + H_grad) @ g
-
-        curr_inp_canidate = curr_inp - descent_rate*update
-
-        R = func(curr_inp_canidate)
-        r = vec(R)
-        cost = r.T @ r
-
-        if cost < min_cost:
-            curr_inp = curr_inp_canidate
-            min_cost = cost
-            lambd /= 10
-
-
-            if callback:
-                P = disassemble_feature_vector(curr_inp)
-                callback(P)
-        else:
-            lambd *= 10
-
-        if lambd > 1e14:
-            raise RuntimeError("Optimization diverging too rapidly. Try lowering the iterations.")
-
-    P = disassemble_feature_vector(curr_inp)
-
-    if callback:
-        callback(P)
+    inp_start = assemble_feature_vector(P_start)
+    inp = generic_levenberg_marquardt(inp_start, cost_func, jacobian_residual_func)
+    P = disassemble_feature_vector(inp)
 
     return P/P[-1,-1]
 
