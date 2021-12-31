@@ -560,7 +560,8 @@ def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, 
 
     def cost_func(inp):
         P = disassemble_with_K(inp)
-        return camera_projection_compute_cost(P, X, x)
+        cost = camera_projection_compute_cost(P, X, x)
+        return cost 
     
     def func(inp):
         P = disassemble_with_K(inp)
@@ -602,6 +603,7 @@ def calibrate_camera(real_points, screen_points):
     P_unnormalized, P = calibrate_camera_helper(real_points, screen_points, func)
     return P_unnormalized, P
 
+# P_estimate and K should both be normalized.
 def calibrate_camera_const_internals(real_points, screen_points, K, P_estimate):
 
     def func(real, screen):

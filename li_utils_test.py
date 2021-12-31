@@ -258,6 +258,24 @@ def calibrate_camera(A, real_points, screen_points):
     A_new, _ = li_utils.calibrate_camera(real_points, screen_points)
     assert (np.abs(A - A_new) < 1e-4).all(), "Calibrate Camera Not Converging"
 
+@test_convergence
+def calibrate_camera_const_internals(A, real_points, screen_points):
+    real, avg_real, scale_real = li_utils.normalize_points(real_points)
+    screen, avg_screen, scale_screen = li_utils.normalize_points(screen_points)
+    real_norm_matrix  = li_utils.construct_normalization_matrix(4, avg_real, scale_real)
+    real_norm_matrix_inv = li_utils.np.linalg.inv(real_norm_matrix)
+    screen_norm_matrix = li_utils.construct_normalization_matrix(3, avg_screen, scale_screen)
+
+    A_norm = screen_norm_matrix @ A @ real_norm_matrix_inv
+    A_norm /= A_norm[-1,-1]
+
+    K, _, _ = li_utils.get_projection_product_matricies(A_norm)
+
+    A_new, _ = li_utils.calibrate_camera_const_internals(real_points, screen_points, K, A_norm)
+
+    assert (np.abs(A - A_new) < 1e-4).all(), "Calibrate Camera Not Converging"
+
+
 if __name__ == '__main__':
     for test in tests:
         test()
