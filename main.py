@@ -6,8 +6,7 @@ import utils
 import li_utils
 import draw_utils
 
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+import calibrate_camera
 
 def try1():
     train_card = image_utils.open_and_white_balance("photos/test_card.jpg")
@@ -143,14 +142,14 @@ def try4():
             plt = draw_utils.show_scene(real_points_m, internal, rotation, position)
         
         def draw_on_pic(P, show_projected_points=False):
-            new_points = li_utils.camera_project_points(P, real_points_m)
+            new_points = calibrate_camera.camera_project_points(P, real_points_m)
 
             drawn = image_utils.draw_points_on_image(imag, new_points, radius=20, colors=colors)
             if show_projected_points:
                 image_utils.show_image("howdy", drawn)
             display(P)
 
-        P = li_utils.calibrate_camera(real_points_m, points)
+        P = calibrate_camera.calibrate_camera(real_points_m, points)
         draw_on_pic(P, show_projected_points=True)
 
 def try5():
@@ -212,7 +211,7 @@ def try5():
     np.set_printoptions(linewidth=180)
 
     centers = np.array([image_utils.center_of_box(box) for box in boxes])
-    P, P_norm = li_utils.calibrate_camera(real_points_m, centers)
+    P, P_norm = calibrate_camera.calibrate_camera(real_points_m, centers)
     internal, rotation, position = li_utils.get_projection_product_matricies(P)
     plt = draw_utils.show_scene(real_points_m, internal, rotation, position, colors=np.array(colors)/255)
     line = position
@@ -229,7 +228,7 @@ def try5():
 
             centers = np.array([image_utils.center_of_box(box) for box in boxes])
 
-            P, P_norm = li_utils.calibrate_camera_const_internals(real_points_m, centers, internal, P_norm)
+            P, P_norm = calibrate_camera.calibrate_camera_const_internals(real_points_m, centers, internal, P_norm)
             _, rotation, position = li_utils.get_projection_product_matricies(P)
 
             line = np.hstack([line, position])
