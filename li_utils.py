@@ -189,7 +189,7 @@ def product_matricies_to_projection_matrix(K, R, p):
     H = K@R
     camera_matrix = np.hstack((I_3, -p))
     P_new = H@camera_matrix
-    return P_new
+    return P_new/P_new[-1,-1]
 
 def cut_last_row(x):
     return x[0:-1, :]

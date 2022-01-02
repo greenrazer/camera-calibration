@@ -69,13 +69,16 @@ def test_convergence(func):
             X = np.random.rand(3,12)
             X = li_utils.to_homo_coords(X)
 
-            X_inp = li_utils.to_euclid_coords(X,   entire=False).T
-            X_out = li_utils.to_euclid_coords(A@X, entire=False).T
+            x = A@X
+            x = x/x[-1]
+
+            X_inp = li_utils.to_euclid_coords(X, entire=False).T
+            X_out = li_utils.to_euclid_coords(x, entire=False).T
             
             try:
                 return func(A, X_inp, X_out)
-            except AssertionError:
-                print(f" Failed try {i+1} of {trys}, attempting again...")
+            except AssertionError as e:
+                print(f" Failed: {e}... try {i+1} of {trys}, attempting again...")
 
         return func(A, X_inp, X_out)
 
@@ -122,9 +125,10 @@ def camera_projection_levenberg_marquardt(A, real_points, screen_points):
 
 @test_convergence
 def numerical_camera_projection_levenberg_marquardt(A, real_points, screen_points):
+    # TODO this test is super flaky with a random matrix and I have no idea why
     A_new = calibrate_camera.numerical_camera_projection_levenberg_marquardt(real_points, screen_points, A)
 
-    assert np.allclose(A, A_new), "levenberg marquardt algorithm diverging from optimum"
+    assert np.allclose(A, A_new), "numerical levenberg marquardt algorithm diverging from optimum"
 
     assemble_func = calibrate_camera.assemble_feature_vector
     def test_assemble_feature_vector(P, include_K=True):
@@ -134,7 +138,7 @@ def numerical_camera_projection_levenberg_marquardt(A, real_points, screen_point
 
     A_new = calibrate_camera.numerical_camera_projection_levenberg_marquardt(real_points, screen_points, A, iters=15)
 
-    assert (np.abs(A - A_new) < 1e-4).all(), "levenberg marquardt does not converge to optimum from slightly different start"
+    assert (np.abs(A - A_new) < 1e-4).all(), "numerical levenberg marquardt does not converge to optimum from slightly different start"
 
 @test_convergence
 def calibrate_camera_test(A, real_points, screen_points):
@@ -159,4 +163,5 @@ def calibrate_camera_const_internals(A, real_points, screen_points):
     assert (np.abs(A - A_new) < 1e-4).all(), "Calibrate Camera Not Converging"
 
 if __name__ == "__main__":
-    run_tests()
+    numerical_camera_projection_levenberg_marquardt()
+    # run_tests()
