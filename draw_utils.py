@@ -1,12 +1,21 @@
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
+BASE_COLORS = [
+        [1,1,1], # White
+        [0.4, 0.4, 1], # Purple
+        [0.8, 0.8, 0.8], # Silver
+        [1, 0.6, 0], # Orange
+        [1, 0, 0], # Red
+        [0, 0, 1], # Blue
+        [1, 1, 0], # Yellow
+    ]
+
 def draw_vec(ax, from_pt, to_pt, color):
     ax.quiver([from_pt[0]], [from_pt[1]], [from_pt[2]], [to_pt[0]], [to_pt[1]], [to_pt[2]], color=[color])
 
 def draw_point(ax, point, color):
     ax.scatter([point[0]], [point[1]], [point[2]], color=[color])
-
 
 def show_scene(points, inter, rot, pos, colors= [1, 1, 1], scale=1, box_radius=2, line=None):
     fig = plt.figure()
@@ -17,6 +26,27 @@ def show_scene(points, inter, rot, pos, colors= [1, 1, 1], scale=1, box_radius=2
     create_3d_scene(ax, points, pos, rot, inter, scale=scale, box_radius=box_radius)
     plt.show()
 
+def show_multi_cam_scene(points, positions, rotations, colors=BASE_COLORS):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    for p, R in zip(positions, rotations):
+            draw_rotation_matrix(ax, R.T, p)
+            draw_point(ax, p, [0,0,0])
+
+    i = 0
+    for pt in points:
+        draw_point(ax, pt, colors[i%len(colors)])
+        i+=1
+
+    box_radius = 2
+    ax.set_xlim([-box_radius,box_radius])
+    ax.set_ylim([-box_radius, box_radius])
+    ax.set_zlim([-box_radius, box_radius])
+
+    plt.show()
+
+
 def draw_rotation_matrix(ax, rot, at=[0,0,0], scale=1):
     # negitive y because the image is upsidedown in the computer
     # like y=0 is the top y >> 0 is the bottom
@@ -26,15 +56,6 @@ def draw_rotation_matrix(ax, rot, at=[0,0,0], scale=1):
     draw_vec(ax, at, r[:,1]*scale, [0,1,0]) # green x right - y
     draw_vec(ax, at, r[:,2]*scale, [0,0,1]) # blue z forward - z
 
-BASE_COLORS = [
-        [1,1,1], # White
-        [0.4, 0.4, 1], # Purple
-        [0.8, 0.8, 0.8], # Silver
-        [1, 0.6, 0], # Orange
-        [1, 0, 0], # Red
-        [0, 0, 1], # Blue
-        [1, 1, 0], # Yellow
-    ]
 
 def create_3d_scene(ax, points, pos, rot, inter, colors=BASE_COLORS, scale=1, box_radius=2):
 

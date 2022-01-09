@@ -58,9 +58,8 @@ def show_img_select_roi_coords(window_name, img, single=False, width=300):
 
     return scaled_rs[0] if single else scaled_rs
 
-def show_image_select_points(window_name, img, width=300, colors=[[255,0,0]], uv=False):
+def show_image_select_points(window_name, img, width=600, colors=[[255,0,0]], uv=False):
     scaled_im, scale = resize_keep_aspect_ratio(img, width)
-    print(colors[0])
 
     def click_event(event, x, y, flags, params):
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -75,7 +74,6 @@ def show_image_select_points(window_name, img, width=300, colors=[[255,0,0]], uv
             cv2.circle(params['img'], (x,y), 5, color, -1)
             cv2.imshow(window_name, params['img'])
             params['count']+=1
-            print(params['colors'][(color_index+1) % len(params['colors'])])
 
     params = {
         'img':scaled_im,

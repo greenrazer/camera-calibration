@@ -130,5 +130,84 @@ def numerical_jacobian():
 
     assert np.allclose(J, J_true), "square jacobian failed"
 
+@test
+def trianguate_point():
+    p1 = np.array([0,0,0])[...,None]
+    p2 = np.array([1,0,0])[...,None]
+
+    K = li_utils.I_3.copy()
+    # negitive camera constant... so its pointing forward
+    K[0,0] = - K[0,0]
+
+    R = li_utils.I_3
+
+    P1 = li_utils.product_matricies_to_projection_matrix(K, R, p1)
+    P2 = li_utils.product_matricies_to_projection_matrix(K, R, p2)
+
+    X = np.random.rand(3)[...,None]
+
+    X_h = li_utils.to_homo_coords(X)
+
+    x1 = P1 @ X_h
+    x1 /= x1[-1,-1]
+    x2 = P2 @ X_h
+    x2 /= x2[-1,-1]
+
+    X_est = li_utils.triangulate_point(P1, P2, x1, x2)
+
+    assert np.allclose(X, X_est), "triangulate singular point not working"
+
+@test
+def triangulate_points():
+    p1 = np.array([0,0,0])[...,None]
+    p2 = np.array([1,0,0])[...,None]
+
+    K = li_utils.I_3
+
+    w1 = np.random.rand(3)
+    w2 = np.random.rand(3)
+    R1 = li_utils.rotation_angles_to_matrix(w1)
+    R2 = li_utils.rotation_angles_to_matrix(w2)
+
+    P1 = li_utils.product_matricies_to_projection_matrix(K, R1, p1)
+    P2 = li_utils.product_matricies_to_projection_matrix(K, R2, p2)
+
+    X = np.random.rand(3,1000)
+
+    X_h = li_utils.to_homo_coords(X)
+
+    x1 = P1 @ X_h
+    x1 = li_utils.to_euclid_coords(x1, entire=False)
+    x2 = P2 @ X_h
+    x2 = li_utils.to_euclid_coords(x2, entire=False)
+
+    X_est = li_utils.triangulate_points(P1, P2, x1, x2)
+
+    assert np.allclose(X, X_est), "triangulate points not working"
+
+@test
+def iterative_closest_point_with_scale():
+    X = np.random.rand(3,4)
+    scale = np.random.rand(1)
+    translation = np.random.rand(3)[...,None]
+
+    w = np.random.rand(3)
+    R = li_utils.rotation_angles_to_matrix(w)
+
+    X_adj = scale*R@X + translation
+    scale_est, R_est, T_est = li_utils.iterative_closest_point_with_scale(X, X_adj)
+    assert np.allclose(1/scale, scale_est), "scale incorrectly predicted"
+    assert np.allclose(R.T, R_est), "rotation incorrectly predicted"
+    assert np.allclose(-(1/scale)*R.T@translation, T_est), "translation incorrectly predicted"
+
+
+    X_2 = scale_est*R_est@X_adj + T_est
+
+
+    assert np.allclose(X, X_2), "reconstructed points incorrect (possibly a precision error?)"
+
+
+
+
 if __name__ == '__main__':
     run_tests()

@@ -51,3 +51,8 @@ class SliderWindow:
     
     def __exit__(self, type, value, traceback):
         self.close()
+
+def get_last_frame(vc):
+    count = vc.get(cv2.CAP_PROP_FRAME_COUNT)
+    vc.set(cv2.CAP_PROP_POS_FRAMES, count-1)
+    return vc.read()

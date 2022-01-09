@@ -50,6 +50,13 @@ def normalize_points(pts):
 def unnormalize_points(pts, avg, scale):
     return pts/scale + avg
 
+def get_approx_null_space(A):
+    # Svd time
+    _, _, V = np.linalg.svd(A, full_matrices=False)
+
+    # Last column of V, the vector that "points in the direction of the null space"
+    return V.T[:, -1]
+
 def dlt(real_points, screen_points, normalize_inp=True):
     # Given a list of real world points (e.g.? e.i? figure out later TODO x,y,z) 
     # and a list of correspoding screen points (x,y)
@@ -125,13 +132,10 @@ def dlt(real_points, screen_points, normalize_inp=True):
 
     M = np.array(M)
 
-    # Svd time
-    _, _, V = np.linalg.svd(M, full_matrices=False)
+    # where M @ p = 0
+    p = get_null_space(M)
 
-    # Last column of V, the vector that "points in the direction of the null space"
-    p = V.T[:, -1]
-
-    P = p.reshape((3,4))
+    P = unvec(p, shape=(3,4))
 
     return P/P[-1,-1]
 
@@ -180,16 +184,18 @@ def get_projection_product_matricies(P):
 
     return K, R, camera_pos[..., None]
 
-def fix_rotation_matrix(K, R):
-    if K[1,1] < 0:
-        return K @ rotate3d_around_y_180, rotate3d_around_y_180 @ R
-    return K, R
+def get_rotation_and_position_from_calibrated_projection_matrix(P):
+    R = P[:, :3]
+    h = P[:, -1]
+    p = - R.T @ h
+
+    return R, p[...,None]
 
 def product_matricies_to_projection_matrix(K, R, p):
     H = K@R
     camera_matrix = np.hstack((I_3, -p))
     P_new = H@camera_matrix
-    return P_new/P_new[-1,-1]
+    return P_new if P_new[-1,-1] == 0 else P_new/P_new[-1,-1]
 
 def cut_last_row(x):
     return x[0:-1, :]
@@ -309,19 +315,26 @@ def generic_levenberg_marquardt(start, cost_func, jacobian_residual_func, iters=
 
     return curr
 
-def w_to_w_times(w):
+def vector_3_to_skew_symmetric_matrix(v):
     return np.array([
-        [ 0,   -w[2], w[1]],
-        [ w[2], 0,   -w[0]],
-        [-w[1], w[0], 0]
+        [ 0,   -v[2], v[1]],
+        [ v[2], 0,   -v[0]],
+        [-v[1], v[0],  0]
     ])
 
-def w_times_to_w(w_times):
+def skew_symmetric_matrix_to_vector_3(v_times):
     return np.array([
-        w_times[2,1],
-        w_times[0,2],
-        w_times[1,0]
+        v_times[2,1],
+        v_times[0,2],
+        v_times[1,0]
     ])
+
+#TODO delete
+def w_to_w_times(w):
+    return vector_3_to_skew_symmetric_matrix(w)
+
+def w_times_to_w(w_times):
+    return skew_symmetric_matrix_to_vector_3(w_times)
 
 def intrinsic_camera_matrix_to_vector(K):
     # the intrinsic camera matrix in my program is defined as
@@ -357,6 +370,8 @@ def rotation_angles_to_matrix(w):
     # first_term = sin(|w|)/|w|
     # second_term = (1-cos(|w|))/|w|^2
     theta = np.linalg.norm(w)
+    if theta == 0:
+        return I_3
     w_no_theta = w/theta
 
     t1 = np.sin(theta)
@@ -431,3 +446,113 @@ def numerical_jacobian(f, inp):
     size = (np.prod(out_0.shape), np.prod(inp.shape))
     return unvec(jacobian, shape=size)
 
+def triangulate_point(P_1, P_2, projected_point_1, projected_point_2):
+    # this method is pretty brittle... basically only works for stereo normal case
+    # (e.g both cameras pointing in the same direction, normal to the line connecting their centers)
+    # assuming we have
+    # r = <vector from camera_center_1 to projected_point_1>
+    # s = <vector from camera_center_2 to projected_point_2>
+    # f(lambda) = <camera_center_1> + lambda*r
+    # g(mu) = <camera_center_2> + mu*s
+    # find lambda and mu such that we minimize the length of the orthoganal line connecting f(lambda) and g(mu)
+    # we know the line f(lambda) - g(mu) must be orthoganal to the vector r and the vector s so
+    # (f(lambda) - g(mu)).T @ r = 0 
+    # (f(lambda) - g(mu)).T @ s = 0
+    # expanding out we can turn this into a series of linear equations to get
+    # A*[lambda, mu].T = b
+    # where b = [d.T @ r, d.T @ s].T is a 2 x 1 matrix
+    # d = vector between 2 centers = <camera_center_2> - <camera_center_1> is an 3 x 1 matrix
+    # then we can get f and g using lambda and mu
+    # the point we want is the average on the line between f and g or f+g/2
+
+    R_1 = P_1[:, :3]
+    R_2 = P_2[:, :3]
+
+    p_1 = P_1[:,-1][...,None]
+    p_2 = P_2[:,-1][...,None]
+
+    r = R_1.T @ projected_point_1
+    s = R_2.T @ projected_point_2
+
+    A = np.array([
+        [r.T @ r, -s.T @ r],
+        [r.T @ s, -s.T @ s],
+    ])
+    A = np.squeeze(A)
+
+    d = p_2 - p_1
+    b = np.array([
+        [d.T @ r],
+        [d.T @ s]
+    ])
+    b = np.squeeze(b)
+
+    # solve Ax = b where x = [lambda, mu].T 
+    x = np.linalg.solve(A, b)
+    lam = x[0]
+    mu = x[1]
+    f = p_1 + lam*r
+    g = p_2 + mu*s
+
+    # average of f and g
+    return (f+g) / 2
+
+def triangulate_points(P1, P2, projected_points_1, projected_points_2):
+    num_points = projected_points_1.shape[1]
+    X_est = np.zeros((4,num_points))
+    for i in range(num_points):
+        x1, y1 =  projected_points_1[0:2, i]
+        x2, y2 =  projected_points_2[0:2, i]
+
+        A = np.array([
+            x1*P1[2] - P1[0],
+            y1*P1[2] - P1[1],
+            x2*P2[2] - P2[0],
+            y2*P2[2] - P2[1],
+        ])
+
+        U, S, V = np.linalg.svd(A)
+        X = V.T[:,-1]
+        X_est[:,i] = X
+    
+    return to_euclid_coords(X_est, entire=False)
+
+def compute_self_covariance_for_pts(X):
+    cov = 0
+    num_points = X.shape[1]
+    for i in range(num_points):
+        x = X[:,i][...,None]
+        cov += np.squeeze(x.T @ x)
+    return cov/num_points
+
+def iterative_closest_point_with_scale(control_points, corresponding_points):
+    # finds lambda, R, and T such that
+    # control_points = lambda*R @ corresponding_points + T
+
+    mean_control = np.mean(control_points, axis=1)[...,None]
+    mean_corresponding = np.mean(corresponding_points, axis=1)[...,None]
+
+    translated_control = control_points - mean_control
+    translated_corresponding = corresponding_points - mean_corresponding
+
+    control_cov = compute_self_covariance_for_pts(translated_control)
+    corresponding_cov = compute_self_covariance_for_pts(translated_corresponding)
+
+    lambd_sq = control_cov/corresponding_cov
+    lambd = np.sqrt(lambd_sq)
+
+    scale = np.sqrt(lambd)
+
+    scaled_control = (1/scale) * translated_control
+    scaled_corresponding = scale * translated_corresponding
+
+    H = np.zeros((control_points.shape[0], control_points.shape[0]))
+    for col in range(control_points.shape[1]):
+        H += scaled_corresponding[:, col][...,None] @ scaled_control[:, col][None,...]
+    
+    U, D, V = np.linalg.svd(H)
+    R = V.T @ U.T
+
+    T = mean_control- lambd * R @ mean_corresponding
+
+    return lambd, R, T
