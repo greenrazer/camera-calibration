@@ -3,7 +3,7 @@ import numpy as np
 import li_utils
 
 
-def dlt(real_points, screen_points):
+def dlt(real_points, screen_points, normalize_inp=True):
     # Given a list of real world points (e.g.? e.i? figure out later TODO x,y,z) 
     # and a list of correspoding screen points (x,y)
     #
@@ -78,13 +78,10 @@ def dlt(real_points, screen_points):
 
     M = np.array(M)
 
-    # Svd time
-    _, _, V = np.linalg.svd(M, full_matrices=False)
+    # where M @ p = 0
+    p = li_utils.get_approx_null_space(M)
 
-    # Last column of V, the vector that "points in the direction of the null space"
-    p = V.T[:, -1]
-
-    P = p.reshape((3,4))
+    P = np.reshape(p, (3,4))
 
     return P/P[-1,-1]
 
@@ -296,6 +293,88 @@ def projective_3_point(calibrated_real_points, calibrated_screen_points):
 
     s_1_sq = b*b/(1-v*v-2*v*cos_b)
     s_3 = v*np.sqrt(s_1_sq)
+
+def zhangs_method_step(X, x):
+    M = []
+    for xyz, uv in zip(X.T, x.T):
+        M.append([
+            - xyz[0],
+            - xyz[1],
+            - 1,
+            0,
+            0,
+            0,
+            uv[0]*xyz[0],
+            uv[0]*xyz[1],
+            uv[0],
+        ])
+
+        M.append([
+            0,
+            0,
+            0,
+            - xyz[0],
+            - xyz[1],
+            - 1,
+            uv[1]*xyz[0],
+            uv[1]*xyz[1],
+            uv[1],
+        ])
+
+    M = np.array(M)
+
+    h = li_utils.get_approx_null_space(M)
+
+    # H = h.reshape((3,3))
+    H = li_utils.unvec(h, shape=(3,3))
+
+    def v_i_j(i,j):
+        return np.array([
+            [H[i,0]*H[j,0]],
+            [H[i,0]*H[j,1] + H[i,1]*H[j,0]],
+            [H[i,2]*H[j,0] + H[i,0]*H[j,2]],
+            [H[i,1]*H[j,1]],
+            [H[i,2]*H[j,1] + H[i,1]*H[j,2]],
+            [H[i,2]*H[j,2]],
+        ])
+
+        # return np.array([
+        #     [H[0,i]*H[0,j]],
+        #     [H[0,i]*H[1,j] + H[1,i]*H[0,j]],
+        #     [H[2,i]*H[0,j] + H[0,i]*H[2,j]],
+        #     [H[1,i]*H[1,j]],
+        #     [H[2,i]*H[1,j] + H[1,i]*H[2,j]],
+        #     [H[2,i]*H[2,j]],
+        # ])
+
+    return v_i_j(0,1).T, v_i_j(0,0).T - v_i_j(1,1).T
+
+def from_b_to_B(b):
+    B = np.zeros((3,3))
+    B[0,0] = b[0]
+    B[0,1] = B[1,0] = b[1]
+    B[0,2] = B[2,0] = b[2]
+    B[1,1] = b[3]
+    B[1,2] = B[2,1] = b[4]
+    B[2,2] = b[5]
+    return B
+
+def zhangs_method(images, real_points):
+    V = np.zeros((2*len(images), 6))
+    for i, screen_points in enumerate(images):
+        r1, r2 = zhangs_method_step(real_points, screen_points)
+        V[2*i,:] = r1
+        V[2*i+1,:] = r2
+    b = li_utils.get_approx_null_space(V)
+
+    B = from_b_to_B(b)
+
+    K_inv_T = np.linalg.cholesky(B)
+
+    K = np.linalg.inv(K_inv_T.T)
+
+    K_norm = K / K[-1,-1]
+    return K_norm @ li_utils.rotate3d_around_z_180
 
 
 def calibrate_camera_helper(real_points, screen_points, func):

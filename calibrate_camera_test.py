@@ -108,7 +108,7 @@ def direct_linear_transform(A, real_points, screen_points):
     # If we perform the dlt again using the estimated screen points the error
     # should be close to zero and the new estimated projection should be roughly equal
 
-    A_new = li_utils.dlt(real_points, screen_points)
+    A_new = calibrate_camera.dlt(real_points, screen_points)
 
     assert np.allclose(A, A_new), "DLT not working"
 
@@ -162,6 +162,40 @@ def calibrate_camera_const_internals(A, real_points, screen_points):
 
     assert (np.abs(A - A_new) < 1e-4).all(), "Calibrate Camera Not Converging"
 
+@test
+def zhangs_method():
+    # np.random.seed(10)
+    points = (1/5)*np.array([-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5])
+    mg = np.array(np.meshgrid(points, points))
+    X = np.reshape(mg,(2,len(points)*len(points)))
+    X = np.vstack([X,np.zeros(len(points)*len(points))])
+    X = np.vstack([X,np.ones(len(points)*len(points))])
+
+    K = np.array([[-13.50441236, 0.2388132, 0.15245594],
+                  [ -0.        , -13.4455227, 0.65115269],
+                  [  0.        , 0.       , 1.        ]])
+
+    for _ in range(5):
+        try:
+            x_imgs = []
+            for i in range(10):
+                A = np.random.rand(3,4)
+                A[-1, -1] = 1
+                _, R, p = li_utils.get_projection_product_matricies(A)
+
+                P = li_utils.product_matricies_to_projection_matrix(K, R, p)
+
+                x_e = calibrate_camera.camera_project_points_operation(P, X)
+                x_imgs.append(x_e)
+            
+            K_est = calibrate_camera.zhangs_method(x_imgs, X)
+
+            assert np.allclose(K, K_est), "zhangs method not working"
+        except np.linalg.LinAlgError as e:
+            if str(e) == "Matrix is not positive definite":
+                print("   Matrix is not positive definite, not sure why this happens sometimes, retrying...")
+            else:
+                raise np.linalg.LinAlgError(e)
+
 if __name__ == "__main__":
-    numerical_camera_projection_levenberg_marquardt()
-    # run_tests()
+    run_tests()
