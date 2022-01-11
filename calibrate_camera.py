@@ -285,7 +285,7 @@ def projective_3_point(calibrated_real_points, calibrated_screen_points):
     A_4 = (a_min_c_over_b - 1)**2 - 4*c*c*(cos_a*cos_a)/(b*b)
     A_3 = 4*(a_min_c_over_b*(1- a_min_c_over_b)*cos_b - (1 - a_plus_c_over_b)*cos_a*cos_c + 2*c*c*cos_a*cos_a*cos_b/(b*b))
     #oh my godddddd
-    A_2 = 2*(a_min_c_over_b*a_min_c_over_b - 1 + 2*a_min_c_over_b*a_min_c_over_b*cos_b*cos_b) + 2*b_min_c_over_b*cos_a*cos_a - 4*a_plus_c_over_b*cos_a*cos_b*cos_c + 2*b_min_a_over_b*cos_c*cos_c)
+    A_2 = 2*(a_min_c_over_b*a_min_c_over_b - 1 + 2*a_min_c_over_b*a_min_c_over_b*cos_b*cos_b + 2*b_min_c_over_b*cos_a*cos_a - 4*a_plus_c_over_b*cos_a*cos_b*cos_c + 2*b_min_a_over_b*cos_c*cos_c)
     A_1 = 4*(-a_min_c_over_b*(1+a_min_c_over_b)*cos_b + 2*a*a*cos_c*cos_c*cos_b/(b*b) - (1-a_plus_c_over_b)*cos_a*cos_c)
     A_0 = (1+a_min_c_over_b)**2 - 4*a*a*cos_c*cos_c/(b*b)
 
