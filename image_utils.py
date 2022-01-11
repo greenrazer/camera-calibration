@@ -16,11 +16,12 @@ def resize_keep_aspect_ratio(image, width=None, height=None, inter=cv2.INTER_ARE
 
     return cv2.resize(image, dim, interpolation=inter), 1/r
 
-def show_image(window_name, img, width=300):
+def show_image(window_name, img, width=300, wait_and_destroy=True):
     scaled_im, scale = resize_keep_aspect_ratio(img, width)
     cv2.imshow(window_name, scaled_im)
-    cv2.waitKey(0)
-    cv2.destroyWindow(window_name)
+    if wait_and_destroy:
+        cv2.waitKey(0)
+        cv2.destroyWindow(window_name)
 
 # returns roi patch
 def show_img_select_rois(window_name, img, same_size=False, single=False, width=300):

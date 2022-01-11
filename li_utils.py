@@ -315,6 +315,11 @@ def generic_levenberg_marquardt(start, cost_func, jacobian_residual_func, iters=
 
     return curr
 
+def normalized(a, axis=-1, order=2):
+    l2 = np.atleast_1d(np.linalg.norm(a, order, axis))
+    l2[l2==0] = 1
+    return a / np.expand_dims(l2, axis)
+
 def vector_3_to_skew_symmetric_matrix(v):
     return np.array([
         [ 0,   -v[2], v[1]],

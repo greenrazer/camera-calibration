@@ -252,6 +252,52 @@ def numerical_camera_projection_levenberg_marquardt(real_points, screen_points, 
 
     return P/P[-1,-1]
 
+def projective_3_point(calibrated_real_points, calibrated_screen_points):
+    # given calibrated screen points kx, and real points kX
+    # we get the position and rotation of a camera 
+
+    direction_vectors = li_utils.normalized(calibrated_screen_points, axis=1)
+
+    alpha = np.arccos(direction_vectors[:,0], direction_vectors[:,1])
+    beta = np.arccos(direction_vectors[:,1], direction_vectors[:,2])
+    gamma = np.arccos(direction_vectors[:,2], direction_vectors[:,0])
+
+    a = np.linalg.norm(calibrated_real_points[:,0] - calibrated_real_points[:,1])
+    b = np.linalg.norm(calibrated_real_points[:,1] - calibrated_real_points[:,2])
+    c = np.linalg.norm(calibrated_real_points[:,2] - calibrated_real_points[:,0])
+
+    # law of cosines
+    # substitue u,v
+    # solve for u,v using 4th degree polynomial
+
+    a_min_c_over_b = (a*a - c*c)/(b*b)
+    b_min_c_over_b = (b*b - c*c)/(a*a)
+    b_min_a_over_b = (a*a - b*b)/(c*c)
+
+    a_plus_c_over_b = (a*a + c*c)/(b*b)
+    b_plus_c_over_a = (b*b + c*c)/(a*a)
+    a_plus_b_over_c = (a*a + b*b)/(c*c)
+
+    cos_a = np.cos(alpha)
+    cos_b = np.cos(beta)
+    cos_c = np.cos(gamma)
+
+    A_4 = (a_min_c_over_b - 1)**2 - 4*c*c*(cos_a*cos_a)/(b*b)
+    A_3 = 4*(a_min_c_over_b*(1- a_min_c_over_b)*cos_b - (1 - a_plus_c_over_b)*cos_a*cos_c + 2*c*c*cos_a*cos_a*cos_b/(b*b))
+    #oh my godddddd
+    A_2 = 2*(a_min_c_over_b*a_min_c_over_b - 1 + 2*a_min_c_over_b*a_min_c_over_b*cos_b*cos_b) + 2*b_min_c_over_b*cos_a*cos_a - 4*a_plus_c_over_b*cos_a*cos_b*cos_c + 2*b_min_a_over_b*cos_c*cos_c)
+    A_1 = 4*(-a_min_c_over_b*(1+a_min_c_over_b)*cos_b + 2*a*a*cos_c*cos_c*cos_b/(b*b) - (1-a_plus_c_over_b)*cos_a*cos_c)
+    A_0 = (1+a_min_c_over_b)**2 - 4*a*a*cos_c*cos_c/(b*b)
+
+    vs = np.roots([A_4, A_3, A_2, A_1, A_0])
+
+    #TODO: fix arbitrary v
+    v = vs[0]
+
+    s_1_sq = b*b/(1-v*v-2*v*cos_b)
+    s_3 = v*np.sqrt(s_1_sq)
+
+
 def calibrate_camera_helper(real_points, screen_points, func):
     real, avg_real, scale_real = li_utils.normalize_points(real_points)
     screen, avg_screen, scale_screen = li_utils.normalize_points(screen_points)
@@ -265,6 +311,7 @@ def calibrate_camera_helper(real_points, screen_points, func):
     P_unnormalized /= P_unnormalized[-1,-1]
 
     return P_unnormalized, P
+
 
 def calibrate_camera(real_points, screen_points):
 
