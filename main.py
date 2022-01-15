@@ -446,10 +446,30 @@ def try8():
 
     centers = np.array(all_centers)
 
-    print(centers.shape)
-    print(centers[0,0,0])
+    point_image_matrix = np.ones((num_pts, num_cams))
 
-    print("hi")
+    start = np.random.rand(num_cams*3 + num_pts*6)*1
+
+    cameras, points = bundle_adjustment.numerical_levenberg_marquardt_bundle_adjustment(start, centers, point_image_matrix, K)
+
+    positions = []
+    rotations = []
+    for c in cameras:
+        _,R,p = li_utils.get_projection_product_matricies(c)
+        print(p)
+        positions.append(p)
+        rotations.append(R)
+
+    for p in points:
+        print(p)
+
+    import draw_utils
+    draw_utils.show_multi_cam_scene(np.array(points), positions, rotations)
+
+    # print(centers.shape)
+    # print(centers[0,0,0])
+
+    # print("hi")
 
 if __name__ == '__main__':
     try8()

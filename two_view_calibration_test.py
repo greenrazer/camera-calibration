@@ -204,7 +204,7 @@ def get_calibrated_camera_location_relative_to_first():
 
     # Start of actual test
 
-    P_1_est, P_2_est = two_view_calibration.get_calibrated_camera_location_relative_to_first(kx1, kx2,iters=10000)
+    P_1_est, P_2_est = two_view_calibration.get_calibrated_camera_location_relative_to_first(kx1, kx2, iters=10)
 
     X_est = li_utils.triangulate_points(P_1_est, P_2_est, kx1, kx2)
 
