@@ -375,10 +375,7 @@ def numerical_levenberg_marquardt_bundle_adjustment(start, points, point_image_m
         update = generate_bundle_adjustment_update(curr, points, point_image_matrix, lambd, K)
         canidate = np.squeeze(curr)[...,None] + update
         cost = cost_func(canidate, K, points, point_image_matrix)
-        print(cost, min_cost)
-        cameras, p4oints = deconstruct_feature_vec(curr, point_image_matrix.shape[1], point_image_matrix.shape[0], K)
         if cost < min_cost:
-            print("hey")
             curr = canidate
             min_cost = cost
             lambd /=10
