@@ -8,5 +8,8 @@ def sparse_inv(sparse_A):
     return scipy.sparse.linalg.inv(sparse_A)
 
 def make_sparse_zeros(m, n):
-    return scipy.sparse.lil_matrix(m,n)
+    return scipy.sparse.lil_matrix((m,n))
+
+def convert_to_csr_sparse_matrix_for_computation(M):
+    return M.tocsc()
 
