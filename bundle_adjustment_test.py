@@ -66,15 +66,17 @@ def bundle_adjustment_all_points_in_all_cams():
 
     cameras, points = bundle_adjustment.numerical_levenberg_marquardt_bundle_adjustment(start, points_2d, point_image_matrix, K, iters=20)
 
-    scale, R_sc, T = li_utils.iterative_closest_point_with_scale(true_points_3d[:3, :], np.array(points).T)
+    est_pts_3d = np.array(points).T
+
+    scale, R_sc, T = li_utils.iterative_closest_point_with_scale(true_points_3d[:3, :], est_pts_3d)
 
     sc_pts = (scale*R_sc@(np.array(points).T) + T).T 
     assert np.allclose(true_points_3d[:3, :].T, sc_pts), "real world cordinates incorrectly predicted"
 
     for i, c in enumerate(cameras):
-        _,R,p = li_utils.get_projection_product_matricies(c)
+        R,p = li_utils.get_rotation_and_position_from_calibrated_projection_matrix(c)
         p = scale*R_sc@p + T
-        R = li_utils.rotate3d_around_z_180 @ R @ R_sc.T
+        R = R @ R_sc.T
         _, R_true, p_true = true_camera_products[i]
         assert np.allclose(p_true, p), "camera position incorrect"
         assert np.allclose(R_true, R), "camera rotation incorrect"

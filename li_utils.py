@@ -50,6 +50,39 @@ def normalize_points(pts):
 def unnormalize_points(pts, avg, scale):
     return pts/scale + avg
 
+def normalize_points_for_each_image(pts):
+    pts_out = []
+    avgs = []
+    scales = []
+    for points in pts:
+        new_pts, avg, scale = normalize_points(points)
+        pts_out.append(new_pts)
+        avgs.append(avg)
+        scales.append(scale)
+    return np.array(pts_out), np.array(avgs), np.array(scales)
+
+def calibrate_homo_points_for_each_image(pts, K):
+    K_inv = np.linalg.inv(K)
+    pts_out = []
+    for points in pts:
+        cal_points = K_inv@points.T
+        pts_out.append(cal_points.T)
+    return np.array(pts_out)
+
+def convert_to_euclid_for_each_image(pts):
+    pts_out = []
+    for points in pts:
+        eu_points = to_euclid_coords(points.T, entire=False)
+        pts_out.append(eu_points.T)
+    return np.array(pts_out)
+
+def convert_to_homo_for_each_image(pts):
+    pts_out = []
+    for points in pts:
+        homo_points = to_homo_coords(points.T)
+        pts_out.append(homo_points.T)
+    return np.array(pts_out)
+
 def get_approx_null_space(A):
     # Svd time
     _, _, V = np.linalg.svd(A, full_matrices=False)
@@ -103,11 +136,20 @@ def get_projection_product_matricies(P):
     return K, R, camera_pos[..., None]
 
 def get_rotation_and_position_from_calibrated_projection_matrix(P):
-    R = P[:, :3]
-    h = P[:, -1]
-    p = - R.T @ h
+    K, R, p = get_projection_product_matricies(P)
 
-    return R, p[...,None]
+    if not np.allclose(I_3 @ rotate3d_around_z_180, K):
+        print("Warning:")
+        print("given matrix composed of more than just rotation and position")
+        print("this most likely means there is a lot of error in the calibration matrix")
+        print("used to normalize the data")
+
+    # because our get_projection_product_matricies returns P = K @ rotate_180_z @ rotate_180_z @ R [I3|-p]
+    # when we multiply by (K @ rotate_180_z)^-1 which is equal to rotate_180_z^-1 @ K^-1
+    # rotate_180_z^-1 @ K^-1 @ P = rotate_180_z^-1 @ K^-1 @ K @ rotate_180_z @ rotate_180_z @ R [I3|-p]
+    #                            = rotate_180_z @ R [I3|-p]
+    # so there is a hanging 180 degree rotation we must get rid of
+    return rotate3d_around_z_180 @ R, p
 
 def product_matricies_to_projection_matrix(K, R, p):
     H = K@R

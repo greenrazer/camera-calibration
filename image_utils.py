@@ -251,18 +251,25 @@ class ObjectTracker:
 
 def center_of_box(box):
     x, y, w, h = box
-    return [x + w/2, y + h/2]
+    return [y + h/2, x + w/2]
 
-def draw_points_on_image(im, uv_points, radius=10, colors = [[255, 255, 0]]):
+def draw_points_on_image(im, uv_points, radius=10, colors = [[255, 255, 0]], uv=True, flip_xy=False):
     img = im
     count = 0
     for point in uv_points:
-        if point[0] < 0 or 1 < point[0] or point[1] < 0 or 1 < point[1]:
+
+        if uv:
+            y = int(point[0] * img.shape[0])
+            x = int(point[1] * img.shape[1])
+        else:
+            y = int(point[0])
+            x = int(point[1])
+        
+        print(y,x)
+        print(img.shape)
+        if y < 0 or img.shape[0] < y or x < 0 or img.shape[1] < x:
             continue
-
-        y = int(point[0] * img.shape[0])
-        x = int(point[1] * img.shape[1])
-
-        img = cv2.circle(img, (x,y), radius=radius, color=colors[count % len(colors)], thickness=-1)
+        print("hm?")
+        img = cv2.circle(img, (x,y) if flip_xy else (y,x), radius=radius, color=colors[count % len(colors)], thickness=-1)
         count += 1
     return img

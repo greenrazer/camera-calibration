@@ -303,7 +303,7 @@ def get_calibrated_camera_location_relative_to_first(calibrated_screen_points_1,
     E = estimate_essential_matrix(calibrated_screen_points_1, calibrated_screen_points_2)
     E = numerical_essential_matrix_levenberg_marquardt(E, calibrated_screen_points_1, calibrated_screen_points_2, iters = iters)
     P2, _ = get_projection_matrix_and_product_matricies_from_essential_matrix(E,calibrated_screen_points_1[:,0], calibrated_screen_points_2[:,0])
-    return P_base, P2
+    return P_base, P2 / P2[-1,-1]
 
 def get_uncalibrated_camera_location_relative_to_first(screen_points_1, screen_points_2):
     F = estimate_fundamental_matrix(screen_points_1, screen_points_2)

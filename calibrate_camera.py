@@ -3,7 +3,7 @@ import numpy as np
 import li_utils
 
 
-def dlt(real_points, screen_points, normalize_inp=True):
+def dlt(real_points, screen_points):
     # Given a list of real world points (e.g.? e.i? figure out later TODO x,y,z) 
     # and a list of correspoding screen points (x,y)
     #
@@ -156,7 +156,7 @@ def camera_projection_levenberg_marquardt_jacobian_and_residual(P_curr, X, x):
 def camera_project_points_operation(P, X):
     V = P @ X
     D = np.diag(V.T @ li_utils.e_3)
-    D_inv = np.linalg.inv(D)
+    D_inv = np.linalg.pinv(D)
     return V @ D_inv
 
 def camera_projection_compute_cost(P, X, x):
@@ -166,9 +166,9 @@ def camera_projection_compute_cost(P, X, x):
     return r.T @ r
 
 def camera_project_points(P, real_points, raw_matrix=False):
-    X = to_homo_coords(real_points.T)
+    X = li_utils.to_homo_coords(real_points.T)
     U = camera_project_points_operation(P, X)
-    return U if raw_matrix else cut_last_row(U).T
+    return U if raw_matrix else li_utils.cut_last_row(U).T
 
 def camera_projection_levenberg_marquardt(real_points, screen_points, P_start, iters= 10, callback = None):
     X, x = li_utils.point_lists_to_homogeneous_coordinates(real_points, screen_points)
@@ -294,6 +294,8 @@ def projective_3_point(calibrated_real_points, calibrated_screen_points):
     s_1_sq = b*b/(1-v*v-2*v*cos_b)
     s_3 = v*np.sqrt(s_1_sq)
 
+    raise NotImplementedError("Haven't finished this p3p algo")
+
 def zhangs_method_step(X, x):
     M = []
     for xyz, uv in zip(X.T, x.T):
@@ -391,6 +393,13 @@ def calibrate_camera_helper(real_points, screen_points, func):
 
     return P_unnormalized, P
 
+def calibrate_camera_just_dlt(real_points, screen_points):
+    def func(real, screen):
+        P = dlt(real, screen)
+        return P
+
+    P_unnormalized, P = calibrate_camera_helper(real_points, screen_points, func)
+    return P_unnormalized, P
 
 def calibrate_camera(real_points, screen_points):
 

@@ -8,29 +8,26 @@ import calibrate_camera
 CAMERA_ROTATION_ANGLE_SLICE = slice(0,3)
 CAMERA_POSITION_SLICE = slice(3,6)
 
-def dP_jacobian(feature_vec, K, X, gt):
+def dP_jacobian(feature_vec, K, X):
     def func(curr):
         R = li_utils.rotation_angles_to_matrix(np.squeeze(feature_vec[CAMERA_ROTATION_ANGLE_SLICE]))
         p = np.squeeze(feature_vec[CAMERA_POSITION_SLICE])[...,None]
         P =  li_utils.product_matricies_to_projection_matrix(K, R, p)
         proj_points = calibrate_camera.camera_project_points_operation(P, X)
-        # print(li_utils.to_euclid_coords(proj_points, entire=False) - gt)
-        # #seems to be zero
-        return li_utils.to_euclid_coords(proj_points, entire=False) - gt
+        return li_utils.to_euclid_coords(proj_points, entire=False)
     return li_utils.numerical_jacobian(func, feature_vec)
 
 POSITION_SLICE = slice(0,3)
 
-def dX_jacobian(feature_vec, P, gt):
+def dX_jacobian(feature_vec, P):
     def func(curr):
         X = curr[...,None]
         homo_X = li_utils.to_homo_coords(X)
         proj_points = calibrate_camera.camera_project_points_operation(P, homo_X)
-        # print(li_utils.to_euclid_coords(proj_points, entire=False) - gt)
-        return li_utils.to_euclid_coords(proj_points, entire=False) - gt
+        return li_utils.to_euclid_coords(proj_points, entire=False)
     return li_utils.numerical_jacobian(func, feature_vec)
 
-def make_jacobians(feature_vec, num_points, num_images, K, points2d, point_image_matrix):
+def make_jacobians(feature_vec, num_points, num_images, K, point_image_matrix):
     dX = {}
     dP = {}
     num_x_params = 3
@@ -57,10 +54,8 @@ def make_jacobians(feature_vec, num_points, num_images, K, points2d, point_image
 
                 x_vec = li_utils.vec(X_j)
 
-                lx = points2d[i,j,:][...,None]
-
-                dP[(i, j)] = dP_jacobian(p_vec, K, X_homo_j, lx)
-                dX[(i, j)] = dX_jacobian(x_vec, P, lx)
+                dP[(i, j)] = dP_jacobian(p_vec, K, X_homo_j)
+                dX[(i, j)] = dX_jacobian(x_vec, P)
 
     return dX, dP
 
@@ -142,7 +137,7 @@ def generate_h_x(feature_vec, num_points, num_images, points, point_image_matrix
     for i in range(num_points):
         at_x = i*num_x_params
         x_vec = feature_vec[at_x:at_x+num_x_params]
-        q_i = 0
+        q_i = np.zeros((num_x_params,1))
         for j in range(num_images):
             if point_image_matrix[j,i]:
                 at_p = j*num_p_params
@@ -158,7 +153,7 @@ def generate_h_x(feature_vec, num_points, num_images, points, point_image_matrix
 
                 homo_X = li_utils.to_homo_coords(X)
 
-                r = x - calibrate_camera.camera_project_points_operation(P, homo_X)
+                r = calibrate_camera.camera_project_points_operation(P, homo_X) - x
                 r = li_utils.cut_last_row(r)
                 # print(J.T @ r)
                 q_i += J.T @ r
@@ -175,7 +170,7 @@ def generate_h_p(feature_vec, num_points, num_images, points, point_image_matrix
     for j in range(num_images):
         at_p = j*num_p_params
         p_vec = feature_vec[xs+at_p:xs+at_p+num_p_params]
-        r_i = 0
+        r_i = np.zeros((num_p_params,1))
         for i in range(num_points):
             if point_image_matrix[j, i]:
                 at_x = i*num_x_params
@@ -191,7 +186,7 @@ def generate_h_p(feature_vec, num_points, num_images, points, point_image_matrix
 
                 homo_X = li_utils.to_homo_coords(X)
 
-                r = x - calibrate_camera.camera_project_points_operation(P, homo_X)
+                r = calibrate_camera.camera_project_points_operation(P, homo_X) - x
                 r = li_utils.cut_last_row(r)
                 r_i += J.T @ r
         h_p[at_p:at_p+num_p_params] = r_i
@@ -267,7 +262,7 @@ def generate_bundle_adjustment_update(curr, points, point_image_matrix, lambd, K
     xs = num_points*num_x_params
     ps = num_images*num_p_params
 
-    dX, dP = make_jacobians(curr, num_points, num_images, K, points, point_image_matrix)
+    dX, dP = make_jacobians(curr, num_points, num_images, K, point_image_matrix)
 
     H_xx = generate_H_xx(num_points, num_images, dX, lambd, point_image_matrix)
     H_pp = generate_H_pp(num_points, num_images, dP, lambd, point_image_matrix)
@@ -333,12 +328,12 @@ def deconstruct_feature_vec(feature_vec, num_points, num_images, K, products=Fal
     return cameras, points
 
 def get_all_points_in_camera(image_num, points2d, points3d, point_image_matrix):
-    num_points = point_image_matrix.shape[0]
+    num_points = point_image_matrix.shape[1]
 
     points_2d = []
     points_3d = []
     for i in range(num_points):
-        if point_image_matrix[i, image_num]:
+        if point_image_matrix[image_num, i]:
             points_2d.append(points2d[image_num, i, :])
             points_3d.append(points3d[i,:])
     return np.array(points_2d).T, np.array(points_3d).T
@@ -347,8 +342,8 @@ def cost_func(feature_vec, K, points2d, point_image_matrix):
     num_x_params = 3
     num_p_params = 6
 
-    num_points = point_image_matrix.shape[1]
     num_images = point_image_matrix.shape[0]
+    num_points = point_image_matrix.shape[1]
 
     cameras, points3d = deconstruct_feature_vec(feature_vec, num_points, num_images, K)
     cost = 0
@@ -363,7 +358,7 @@ def cost_func(feature_vec, K, points2d, point_image_matrix):
     
     return cost
 
-def numerical_levenberg_marquardt_bundle_adjustment(start, points, point_image_matrix, K, iters=100):
+def numerical_levenberg_marquardt_bundle_adjustment(start, points, point_image_matrix, K, iters=20):
     # Ideally we'd just do normal Lev-Mar optimisation on all the cameras and all the points
     # however, this linear system is gigantic, so we need to be clever
     # where lambda=0 does Gauss Newton and lambda >> 0 does gradient descent
@@ -373,8 +368,9 @@ def numerical_levenberg_marquardt_bundle_adjustment(start, points, point_image_m
 
     for i in range(iters):
         update = generate_bundle_adjustment_update(curr, points, point_image_matrix, lambd, K)
-        canidate = np.squeeze(curr)[...,None] + update
+        canidate = np.squeeze(curr)[...,None] - update
         cost = cost_func(canidate, K, points, point_image_matrix)
+        print(cost, min_cost)
         if cost < min_cost:
             curr = canidate
             min_cost = cost
