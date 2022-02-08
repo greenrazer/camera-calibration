@@ -27,7 +27,7 @@ def dX_jacobian(feature_vec, P):
         return li_utils.to_euclid_coords(proj_points, entire=False)
     return li_utils.numerical_jacobian(func, feature_vec)
 
-def make_jacobians(feature_vec, num_points, num_images, K, point_image_matrix):
+def make_jacobians(feature_vec, num_points, num_images, K, image_point_matrix):
     dX = {}
     dP = {}
     num_x_params = 3
@@ -36,7 +36,7 @@ def make_jacobians(feature_vec, num_points, num_images, K, point_image_matrix):
     cameras, points3d = deconstruct_feature_vec(feature_vec, num_points, num_images, K, products=True)
     points3d = np.array(points3d)
     for i, camera in enumerate(cameras):
-        # x, X = get_all_points_in_camera(i, points2d, points3d, point_image_matrix)
+        # x, X = get_all_points_in_camera(i, points2d, points3d, image_point_matrix)
         # X_homo = li_utils.to_homo_coords(X)
         # x_homo = li_utils.to_homo_coords(x)
         R, p = camera
@@ -46,7 +46,7 @@ def make_jacobians(feature_vec, num_points, num_images, K, point_image_matrix):
         p_vec = np.hstack([w, li_utils.vec(p)])
 
         for j in range(num_points):
-            if point_image_matrix[i,j]:
+            if image_point_matrix[i,j]:
 
                 X_j = points3d.T[:, j]
 
@@ -59,7 +59,7 @@ def make_jacobians(feature_vec, num_points, num_images, K, point_image_matrix):
 
     return dX, dP
 
-def generate_H_xx(num_points, num_images, dX, lambd, point_image_matrix):
+def generate_H_xx(num_points, num_images, dX, lambd, image_point_matrix):
     num_x_params = 3
     xs = num_points*num_x_params
     H_xx = sparse_li_utils.make_sparse_zeros(xs, xs)
@@ -68,7 +68,7 @@ def generate_H_xx(num_points, num_images, dX, lambd, point_image_matrix):
         V_i = np.zeros((num_x_params, num_x_params))
 
         for j in range(num_images):
-            if point_image_matrix[j, i]:
+            if image_point_matrix[j, i]:
                 J = dX[(j,i)]
                 # print(J.T @ J)
                 V_i += J.T @ J
@@ -91,7 +91,7 @@ def generate_H_xx(num_points, num_images, dX, lambd, point_image_matrix):
     # print(H_xx)
     return sparse_li_utils.convert_to_csr_sparse_matrix_for_computation(H_xx)
 
-def generate_H_pp(num_points, num_images, dP, lambd, point_image_matrix):
+def generate_H_pp(num_points, num_images, dP, lambd, image_point_matrix):
     num_p_params = 6
     ps = num_images*num_p_params
     H_pp = sparse_li_utils.make_sparse_zeros(ps, ps)
@@ -99,7 +99,7 @@ def generate_H_pp(num_points, num_images, dP, lambd, point_image_matrix):
     for j in range(num_images):
         U_j = np.zeros((num_p_params, num_p_params))
         for i in range(num_points):
-            if point_image_matrix[j, i]:
+            if image_point_matrix[j, i]:
                 J = dP[(j,i)]
                 U_j += J.T @ J
         U_j += lambd*I
@@ -112,7 +112,7 @@ def generate_H_pp(num_points, num_images, dP, lambd, point_image_matrix):
         # quit()
     return sparse_li_utils.convert_to_csr_sparse_matrix_for_computation(H_pp)
 
-def generate_H_xp(num_points, num_images, dX, dP, point_image_matrix):
+def generate_H_xp(num_points, num_images, dX, dP, image_point_matrix):
     num_x_params = 3
     num_p_params = 6
     xs = num_points*num_x_params
@@ -120,7 +120,7 @@ def generate_H_xp(num_points, num_images, dX, dP, point_image_matrix):
     H_xp = sparse_li_utils.make_sparse_zeros(xs, ps)
     for i in range(num_points):
         for j in range(num_images):
-            if point_image_matrix[j, i]:
+            if image_point_matrix[j, i]:
                 J_P = dP[(j,i)]
                 J_X = dX[(j,i)]
                 W_ij = J_X.T @ J_P
@@ -129,7 +129,7 @@ def generate_H_xp(num_points, num_images, dX, dP, point_image_matrix):
                 H_xp[at_x:at_x+num_x_params, at_p:at_p+num_p_params] = W_ij
     return sparse_li_utils.convert_to_csr_sparse_matrix_for_computation(H_xp)
 
-def generate_h_x(feature_vec, num_points, num_images, points, point_image_matrix, dX, K):
+def generate_h_x(feature_vec, num_points, num_images, points, image_point_matrix, dX, K):
     num_p_params = 6
     num_x_params = 3
     xs = num_points*num_x_params
@@ -139,7 +139,7 @@ def generate_h_x(feature_vec, num_points, num_images, points, point_image_matrix
         x_vec = feature_vec[at_x:at_x+num_x_params]
         q_i = np.zeros((num_x_params,1))
         for j in range(num_images):
-            if point_image_matrix[j,i]:
+            if image_point_matrix[j,i]:
                 at_p = j*num_p_params
                 p_vec = feature_vec[xs+at_p:xs+at_p+num_p_params]
 
@@ -161,7 +161,7 @@ def generate_h_x(feature_vec, num_points, num_images, points, point_image_matrix
         h_x[at_x:at_x+num_x_params] = q_i
     return h_x
 
-def generate_h_p(feature_vec, num_points, num_images, points, point_image_matrix, dP, K):
+def generate_h_p(feature_vec, num_points, num_images, points, image_point_matrix, dP, K):
     num_p_params = 6
     num_x_params = 3
     ps = num_images*num_p_params
@@ -172,7 +172,7 @@ def generate_h_p(feature_vec, num_points, num_images, points, point_image_matrix
         p_vec = feature_vec[xs+at_p:xs+at_p+num_p_params]
         r_i = np.zeros((num_p_params,1))
         for i in range(num_points):
-            if point_image_matrix[j, i]:
+            if image_point_matrix[j, i]:
                 at_x = i*num_x_params
                 x_vec = feature_vec[at_x:at_x+num_x_params]
 
@@ -193,7 +193,7 @@ def generate_h_p(feature_vec, num_points, num_images, points, point_image_matrix
     return h_p
 
 
-def generate_bundle_adjustment_update(curr, points, point_image_matrix, lambd, K):
+def generate_bundle_adjustment_update(curr, points, image_point_matrix, lambd, K):
     # there are f number of images in the system
     # x_j = <k known nd points for image j> = nxk
     # X_j = <k unknown md points for image j> = mxk
@@ -253,8 +253,8 @@ def generate_bundle_adjustment_update(curr, points, point_image_matrix, lambd, K
     # 3. solve the sparse system H_pp_bar * v_p.T = h_p_bar
     # 4. solve v_x.T = H_xx^-1(h_x - H_xp * v_p.T)
 
-    num_images = point_image_matrix.shape[0]
-    num_points = point_image_matrix.shape[1]
+    num_images = image_point_matrix.shape[0]
+    num_points = image_point_matrix.shape[1]
 
     num_x_params = 3
     num_p_params = 6
@@ -262,17 +262,17 @@ def generate_bundle_adjustment_update(curr, points, point_image_matrix, lambd, K
     xs = num_points*num_x_params
     ps = num_images*num_p_params
 
-    dX, dP = make_jacobians(curr, num_points, num_images, K, point_image_matrix)
+    dX, dP = make_jacobians(curr, num_points, num_images, K, image_point_matrix)
 
-    H_xx = generate_H_xx(num_points, num_images, dX, lambd, point_image_matrix)
-    H_pp = generate_H_pp(num_points, num_images, dP, lambd, point_image_matrix)
-    H_xp = generate_H_xp(num_points, num_images, dX, dP, point_image_matrix)
+    H_xx = generate_H_xx(num_points, num_images, dX, lambd, image_point_matrix)
+    H_pp = generate_H_pp(num_points, num_images, dP, lambd, image_point_matrix)
+    H_xp = generate_H_xp(num_points, num_images, dX, dP, image_point_matrix)
     H_px = H_xp.T
 
     H_xx_inv = sparse_li_utils.sparse_inv(H_xx)
 
-    h_x = generate_h_x(curr, num_points, num_images, points, point_image_matrix, dX, K)
-    h_p = generate_h_p(curr, num_points, num_images, points, point_image_matrix, dP, K)
+    h_x = generate_h_x(curr, num_points, num_images, points, image_point_matrix, dX, K)
+    h_p = generate_h_p(curr, num_points, num_images, points, image_point_matrix, dP, K)
 
     Y = H_px@H_xx_inv
 
@@ -289,6 +289,18 @@ def generate_bundle_adjustment_update(curr, points, point_image_matrix, lambd, K
     return v
 
 def construct_feature_vec(num_points, num_images, K_R_Pos_tuple_list, Xs):
+    '''
+    Constructs feature vector from 
+
+        Parameters:
+            num_points (int): number of unique points
+            num_image (int): number of unique images
+            K_R_Pos_tuple_list (ncams length List<(3x3 intrinsic array, 3x3 rotation array, 3x1 position array)): 
+                list of tuples that contain the projection matrix products
+            Xs (3xnpoints array): array of 3d non-homogenous points
+        Returns:
+            (npoints*3+ncams*6 x 1 np.array<float>): the feature vector
+    '''
     start = np.zeros(num_points*3 + num_images*6)
     start[0:num_points*3] = li_utils.vec(Xs)
     for i, K_R_Pos_tuple in enumerate(K_R_Pos_tuple_list):
@@ -327,29 +339,29 @@ def deconstruct_feature_vec(feature_vec, num_points, num_images, K, products=Fal
 
     return cameras, points
 
-def get_all_points_in_camera(image_num, points2d, points3d, point_image_matrix):
-    num_points = point_image_matrix.shape[1]
+def get_all_points_in_camera(image_num, points2d, points3d, image_point_matrix):
+    num_points = image_point_matrix.shape[1]
 
     points_2d = []
     points_3d = []
     for i in range(num_points):
-        if point_image_matrix[image_num, i]:
+        if image_point_matrix[image_num, i]:
             points_2d.append(points2d[image_num, i, :])
             points_3d.append(points3d[i,:])
     return np.array(points_2d).T, np.array(points_3d).T
 
-def cost_func(feature_vec, K, points2d, point_image_matrix):
+def cost_func(feature_vec, K, points2d, image_point_matrix):
     num_x_params = 3
     num_p_params = 6
 
-    num_images = point_image_matrix.shape[0]
-    num_points = point_image_matrix.shape[1]
+    num_images = image_point_matrix.shape[0]
+    num_points = image_point_matrix.shape[1]
 
     cameras, points3d = deconstruct_feature_vec(feature_vec, num_points, num_images, K)
     cost = 0
     points3d = np.array(points3d)
     for i, camera in enumerate(cameras):
-        x, X = get_all_points_in_camera(i, points2d, points3d, point_image_matrix)
+        x, X = get_all_points_in_camera(i, points2d, points3d, image_point_matrix)
         X_homo = li_utils.to_homo_coords(X)
         x_homo = li_utils.to_homo_coords(x)
 
@@ -358,19 +370,33 @@ def cost_func(feature_vec, K, points2d, point_image_matrix):
     
     return cost
 
-def numerical_levenberg_marquardt_bundle_adjustment(start, points, point_image_matrix, K, iters=20):
+def numerical_levenberg_marquardt_bundle_adjustment(start, points, image_point_matrix, K, iters=20):
+    '''
+    Performs the Levenberg-Marquart optimization using bundle adjustment algorithm
+
+        Parameters:
+            start (npoints*3+ncams*6 x 1 np.array<float>): the initial guess for the feature vector, 
+                can be retrieved by running construct feature vec function
+            points (ncams x npoints x 2 np.array<float>): all the corresponding points in each camera
+            image_point_matrix (ncams x npoints np.array<float>): matrix which has entry 1 at i j if point j is in camera view i
+            K (3x3 np.array<float>): the calibration matrix
+            iters (int): maximum number of iterations
+        Returns:
+            (npoints*3+ncams*6 x 1 np.array<float>): the final feature vector, can get back all the camera mats and points
+                using deconstruct feature vec
+    '''
     # Ideally we'd just do normal Lev-Mar optimisation on all the cameras and all the points
     # however, this linear system is gigantic, so we need to be clever
     # where lambda=0 does Gauss Newton and lambda >> 0 does gradient descent
     lambd = 1e-4
     curr = start
-    min_cost = cost_func(start, K, points, point_image_matrix)
+    min_cost = cost_func(start, K, points, image_point_matrix)
 
     for i in range(iters):
-        update = generate_bundle_adjustment_update(curr, points, point_image_matrix, lambd, K)
+        update = generate_bundle_adjustment_update(curr, points, image_point_matrix, lambd, K)
         canidate = np.squeeze(curr)[...,None] - update
-        cost = cost_func(canidate, K, points, point_image_matrix)
-        print(cost, min_cost)
+        cost = cost_func(canidate, K, points, image_point_matrix)
+        
         if cost < min_cost:
             curr = canidate
             min_cost = cost
@@ -383,5 +409,5 @@ def numerical_levenberg_marquardt_bundle_adjustment(start, points, point_image_m
         if lambd > 1e14:
             break
 
-    cameras, points = deconstruct_feature_vec(curr, point_image_matrix.shape[1], point_image_matrix.shape[0], K)
+    cameras, points = deconstruct_feature_vec(curr, image_point_matrix.shape[1], image_point_matrix.shape[0], K)
     return cameras, points
