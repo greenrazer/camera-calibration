@@ -300,6 +300,16 @@ def numerical_fundamental_matrix_levenberg_marquardt(F_start, screen_points_1, s
     return F
 
 def get_calibrated_camera_location_relative_to_first(calibrated_screen_points_1, calibrated_screen_points_2,iters=15):
+    '''
+    Gets relative projection matricies from 2 sets of corresponding calibrated (multiplied by K) points
+
+        Parameters:
+            calibrated_screen_points_1 (3 x npoints array): corresponding 2d points in homogeous cordinates on the first image plane multiplied by the internal matrix
+            calibrated_screen_points_2 (3 x npoints array): corresponding 2d points in homogeous coordinates on the second image plane multiplied by the internal matrix
+        Returns:
+            P_base (3x4 array): [I|0]
+            P (3x4 array): second matrix relative to P_base
+    '''
     E = estimate_essential_matrix(calibrated_screen_points_1, calibrated_screen_points_2)
     E = numerical_essential_matrix_levenberg_marquardt(E, calibrated_screen_points_1, calibrated_screen_points_2, iters = iters)
     P2, _ = get_projection_matrix_and_product_matricies_from_essential_matrix(E,calibrated_screen_points_1[:,0], calibrated_screen_points_2[:,0])

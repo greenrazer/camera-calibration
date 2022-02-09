@@ -402,6 +402,16 @@ def calibrate_camera_just_dlt(real_points, screen_points):
     return P_unnormalized, P
 
 def calibrate_camera(real_points, screen_points):
+    '''
+    Constructs feature vector from 
+
+        Parameters:
+            real_points (npoints x 3 array): 3d points in the scene
+            screen_points (npoints x 2 array): corresponding 2d points on the image plane
+        Returns:
+            P_unnormalized (3x4 array): the estimated projection matrix
+            P (3x4 array): the estimated projection matrix with normalized inputs and outputs
+    '''
 
     def func(real, screen):
         P = dlt(real, screen)
@@ -414,6 +424,18 @@ def calibrate_camera(real_points, screen_points):
 
 # P_estimate and K should both be normalized.
 def calibrate_camera_const_internals(real_points, screen_points, K, P_estimate):
+    '''
+    Constructs feature vector from 
+
+        Parameters:
+            real_points (npoints x 3 array): 3d points in the scene
+            screen_points (npoints x 2 array): corresponding 2d points on the image plane
+            K (3x3 array): The internal parameters that should stay constant between cameras
+            P_estimate (3x4 array): inital guess for P
+        Returns:
+            P_unnormalized (3x4 array): the estimated projection matrix
+            P (3x4 array): the estimated projection matrix with normalized inputs and outputs
+    '''
 
     def func(real, screen):
         P = numerical_camera_projection_levenberg_marquardt(real, screen, P_estimate, K_given=K)
